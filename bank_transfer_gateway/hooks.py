@@ -4,7 +4,7 @@ app_publisher = "Your Name"
 app_description = "Bank Transfer Payment Gateway for Frappe LMS"
 app_email = "your.email@example.com"
 app_license = "MIT"
-required_apps = ["frappe", "payments"]
+required_apps = ["frappe"]
 
 # Document Events
 # ----------------
