@@ -1,0 +1,172 @@
+{% extends "templates/web.html" %}
+
+{% block title %}Bank Transfer Payment Instructions{% endblock %}
+
+{% block page_content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Order Header -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fa fa-university"></i> Bank Transfer Payment
+                    </h4>
+                </div>
+                <div class="card-body">
+                    {% if order %}
+                    <div class="alert alert-info">
+                        <strong>Order Reference:</strong> 
+                        <span class="badge badge-lg bg-dark text-white p-2 fs-5">{{ order.order_id }}</span>
+                        <br><small class="text-muted">Please use this reference when making the transfer</small>
+                    </div>
+                    
+                    <!-- Payment Summary -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h5>Payment Details</h5>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Course/Item:</strong></td>
+                                    <td>{{ order.title }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Amount:</strong></td>
+                                    <td class="text-success fs-4">
+                                        <strong>{{ order.currency }} {{ frappe.utils.fmt_money(order.amount, currency=order.currency) }}</strong>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Status:</strong></td>
+                                    <td>
+                                        {% if order.status == "Pending" %}
+                                        <span class="badge bg-warning">Awaiting Payment</span>
+                                        {% elif order.status == "Completed" %}
+                                        <span class="badge bg-success">Payment Confirmed</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ order.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Payer Information</h5>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Name:</strong></td>
+                                    <td>{{ order.payer_name or "N/A" }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Email:</strong></td>
+                                    <td>{{ order.payer_email or "N/A" }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-danger">
+                        <i class="fa fa-exclamation-triangle"></i> Order not found
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if order and order.status == "Pending" %}
+            <!-- Bank Details Card -->
+            <div class="card mb-4 border-success">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="fa fa-credit-card"></i> Bank Account Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-bordered">
+                                <tr>
+                                    <td class="bg-light"><strong>Bank Name</strong></td>
+                                    <td>{{ settings.bank_name }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="bg-light"><strong>Account Name</strong></td>
+                                    <td>{{ settings.account_name }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="bg-light"><strong>Account Number</strong></td>
+                                    <td>
+                                        <code class="fs-5">{{ settings.account_number }}</code>
+                                        <button class="btn btn-sm btn-outline-secondary ms-2" 
+                                                onclick="copyToClipboard('{{ settings.account_number }}')">
+                                            <i class="fa fa-copy"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-bordered">
+                                {% if settings.branch_name %}
+                                <tr>
+                                    <td class="bg-light"><strong>Branch</strong></td>
+                                    <td>{{ settings.branch_name }}</td>
+                                </tr>
+                                {% endif %}
+                                {% if settings.branch_code %}
+                                <tr>
+                                    <td class="bg-light"><strong>Branch Code</strong></td>
+                                    <td>{{ settings.branch_code }}</td>
+                                </tr>
+                                {% endif %}
+                                {% if settings.swift_code %}
+                                <tr>
+                                    <td class="bg-light"><strong>SWIFT Code</strong></td>
+                                    <td>{{ settings.swift_code }}</td>
+                                </tr>
+                                {% endif %}
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fa fa-info-circle"></i> Payment Instructions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {{ settings.payment_instructions }}
+                </div>
+            </div>
+
+            <!-- Confirmation Message -->
+            <div class="alert alert-warning">
+                <i class="fa fa-clock"></i> {{ settings.confirmation_message }}
+            </div>
+            {% elif order and order.status == "Completed" %}
+            <div class="alert alert-success">
+                <h4><i class="fa fa-check-circle"></i> Payment Confirmed!</h4>
+                <p>Your payment has been verified. You should now have access to your course.</p>
+                {% if order.redirect_to %}
+                <a href="{{ order.redirect_to }}" class="btn btn-success">
+                    Go to Course <i class="fa fa-arrow-right"></i>
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        frappe.show_alert({message: 'Copied to clipboard!', indicator: 'green'}, 3);
+    });
+}
+</script>
+{% endblock %}
+

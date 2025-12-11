@@ -1,0 +1,18 @@
+[project]
+name = "bank_transfer_gateway"
+version = "1.0.0"
+description = "Bank Transfer Payment Gateway for Frappe LMS"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["flit_core>=3.4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "bank_transfer_gateway"
+

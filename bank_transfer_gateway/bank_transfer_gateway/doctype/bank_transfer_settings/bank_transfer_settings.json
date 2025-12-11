@@ -1,0 +1,140 @@
+{
+    "actions": [],
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "enabled",
+        "section_break_bank_details",
+        "bank_name",
+        "account_name",
+        "account_number",
+        "column_break_1",
+        "branch_name",
+        "branch_code",
+        "swift_code",
+        "section_break_currency",
+        "currency",
+        "section_break_instructions",
+        "payment_instructions",
+        "section_break_confirmation",
+        "confirmation_message",
+        "admin_email"
+    ],
+    "fields": [
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "label": "Enabled"
+        },
+        {
+            "fieldname": "section_break_bank_details",
+            "fieldtype": "Section Break",
+            "label": "Bank Account Details"
+        },
+        {
+            "fieldname": "bank_name",
+            "fieldtype": "Data",
+            "label": "Bank Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "account_name",
+            "fieldtype": "Data",
+            "label": "Account Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "account_number",
+            "fieldtype": "Data",
+            "label": "Account Number",
+            "reqd": 1
+        },
+        {
+            "fieldname": "column_break_1",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "branch_name",
+            "fieldtype": "Data",
+            "label": "Branch Name"
+        },
+        {
+            "fieldname": "branch_code",
+            "fieldtype": "Data",
+            "label": "Branch Code"
+        },
+        {
+            "fieldname": "swift_code",
+            "fieldtype": "Data",
+            "label": "SWIFT Code"
+        },
+        {
+            "fieldname": "section_break_currency",
+            "fieldtype": "Section Break",
+            "label": "Currency Settings"
+        },
+        {
+            "default": "LKR",
+            "fieldname": "currency",
+            "fieldtype": "Link",
+            "label": "Currency",
+            "options": "Currency",
+            "reqd": 1
+        },
+        {
+            "fieldname": "section_break_instructions",
+            "fieldtype": "Section Break",
+            "label": "Payment Instructions"
+        },
+        {
+            "default": "<p>Please transfer the exact amount to the bank account shown above.</p>\n<p><strong>Important:</strong></p>\n<ul>\n<li>Use your Order Reference as the payment description/reference</li>\n<li>After making the payment, please email your payment receipt to us</li>\n<li>Your enrollment will be processed within 24-48 hours after payment verification</li>\n</ul>",
+            "fieldname": "payment_instructions",
+            "fieldtype": "Text Editor",
+            "label": "Payment Instructions"
+        },
+        {
+            "fieldname": "section_break_confirmation",
+            "fieldtype": "Section Break",
+            "label": "Confirmation Settings"
+        },
+        {
+            "default": "Thank you for your order! Please complete the bank transfer using the details above. Once we verify your payment, you will receive a confirmation email and be enrolled in the course.",
+            "fieldname": "confirmation_message",
+            "fieldtype": "Small Text",
+            "label": "Confirmation Message"
+        },
+        {
+            "description": "Email address to receive payment notifications",
+            "fieldname": "admin_email",
+            "fieldtype": "Data",
+            "label": "Admin Email",
+            "options": "Email"
+        }
+    ],
+    "index_web_pages_for_search": 1,
+    "issingle": 1,
+    "links": [],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Bank Transfer Gateway",
+    "name": "Bank Transfer Settings",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}
+

@@ -1,0 +1,19 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include bank_transfer_gateway *.css
+recursive-include bank_transfer_gateway *.csv
+recursive-include bank_transfer_gateway *.html
+recursive-include bank_transfer_gateway *.ico
+recursive-include bank_transfer_gateway *.js
+recursive-include bank_transfer_gateway *.json
+recursive-include bank_transfer_gateway *.md
+recursive-include bank_transfer_gateway *.png
+recursive-include bank_transfer_gateway *.py
+recursive-include bank_transfer_gateway *.svg
+recursive-include bank_transfer_gateway *.txt
+recursive-exclude bank_transfer_gateway *.pyc
+
