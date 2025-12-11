@@ -12,6 +12,7 @@ def after_install():
     Sets up the payment gateway and default settings.
     """
     setup_payment_gateway()
+    setup_payment_gateway_account()
     setup_default_settings()
 
 
@@ -34,9 +35,7 @@ def setup_payment_gateway():
         gateway = frappe.get_doc({
             "doctype": "Payment Gateway",
             "gateway": "Bank Transfer",
-            "gateway_controller": "Bank Transfer Settings",
-            "gateway_settings": "Bank Transfer Settings",
-            "is_default": 0
+            "gateway_controller": "Bank Transfer Settings"
         })
         gateway.insert(ignore_permissions=True)
         
@@ -46,6 +45,39 @@ def setup_payment_gateway():
     except Exception as e:
         frappe.log_error(f"Failed to setup payment gateway: {str(e)}")
         print(f"Warning: Could not setup payment gateway: {str(e)}")
+
+
+def setup_payment_gateway_account():
+    """
+    Create a Payment Gateway Account for Bank Transfer.
+    This is required for the LMS billing flow.
+    """
+    try:
+        # Check if Payment Gateway Account doctype exists
+        if not frappe.db.exists("DocType", "Payment Gateway Account"):
+            frappe.log_error("Payment Gateway Account doctype not found.")
+            return
+        
+        # Check if account already exists
+        if frappe.db.exists("Payment Gateway Account", {"payment_gateway": "Bank Transfer"}):
+            print("Bank Transfer gateway account already exists")
+            return
+        
+        # Create the Payment Gateway Account
+        account = frappe.get_doc({
+            "doctype": "Payment Gateway Account",
+            "payment_gateway": "Bank Transfer",
+            "is_default": 0,
+            "currency": "LKR"
+        })
+        account.insert(ignore_permissions=True)
+        
+        frappe.db.commit()
+        print("Bank Transfer Payment Gateway Account created successfully")
+        
+    except Exception as e:
+        frappe.log_error(f"Failed to setup payment gateway account: {str(e)}")
+        print(f"Warning: Could not setup payment gateway account: {str(e)}")
 
 
 def setup_default_settings():
@@ -88,4 +120,5 @@ def register_payment_gateway():
     Can be called from the desk if automatic registration failed.
     """
     setup_payment_gateway()
+    setup_payment_gateway_account()
     return {"status": "success", "message": _("Payment Gateway registered successfully")}
