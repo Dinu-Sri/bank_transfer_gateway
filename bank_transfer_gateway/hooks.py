@@ -33,6 +33,6 @@ website_route_rules = [
 # fixtures = []
 
 # Include js, css files in header of web template
+web_include_js = "/assets/bank_transfer_gateway/js/bank_transfer.js"
 # web_include_css = "/assets/bank_transfer_gateway/css/bank_transfer.css"
-# web_include_js = "/assets/bank_transfer_gateway/js/bank_transfer.js"
 

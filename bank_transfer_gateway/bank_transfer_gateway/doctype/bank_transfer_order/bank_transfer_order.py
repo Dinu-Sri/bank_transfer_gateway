@@ -253,3 +253,158 @@ def update_receipt_status(order_id, file_url):
 
     return {"status": "success", "message": _("Receipt uploaded successfully. We will verify your payment shortly.")}
 
+
+@frappe.whitelist(allow_guest=False)
+def create_bank_transfer_order(doctype, docname, title=None, amount=None, currency=None):
+    """
+    Create a new bank transfer order for a course or batch purchase.
+    
+    Args:
+        doctype: "LMS Course" or "LMS Batch"
+        docname: The name of the course or batch
+        title: Optional title override
+        amount: Optional amount override
+        currency: Optional currency override
+    
+    Returns:
+        dict with order_id and redirect URL
+    """
+    import uuid
+    
+    # Check if bank transfer is enabled
+    settings = frappe.get_single("Bank Transfer Settings")
+    if not settings.enabled:
+        frappe.throw(_("Bank Transfer payment is not currently available"))
+    
+    # Get user info
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Please login to proceed with payment"))
+    
+    user_info = frappe.db.get_value("User", user, ["full_name", "email", "phone"], as_dict=True)
+    
+    # Get course/batch details if not provided
+    if doctype == "LMS Course":
+        if not frappe.db.exists("LMS Course", docname):
+            frappe.throw(_("Course not found"))
+        
+        course = frappe.db.get_value("LMS Course", docname, 
+            ["title", "course_price", "currency", "paid_course"], as_dict=True)
+        
+        if not course.paid_course:
+            frappe.throw(_("This is a free course"))
+        
+        title = title or course.title
+        amount = amount or course.course_price
+        currency = currency or course.currency or settings.currency or "LKR"
+        
+        # Check if already enrolled
+        if frappe.db.exists("LMS Enrollment", {"course": docname, "member": user}):
+            frappe.throw(_("You are already enrolled in this course"))
+    
+    elif doctype == "LMS Batch":
+        if not frappe.db.exists("LMS Batch", docname):
+            frappe.throw(_("Batch not found"))
+        
+        batch = frappe.db.get_value("LMS Batch", docname, 
+            ["title", "amount", "currency", "paid_batch"], as_dict=True)
+        
+        if not batch.paid_batch:
+            frappe.throw(_("This batch does not require payment"))
+        
+        title = title or batch.title
+        amount = amount or batch.amount
+        currency = currency or batch.currency or settings.currency or "LKR"
+        
+        # Check if already enrolled
+        if frappe.db.exists("LMS Batch Enrollment", {"batch": docname, "member": user}):
+            frappe.throw(_("You are already enrolled in this batch"))
+    else:
+        frappe.throw(_("Invalid document type"))
+    
+    # Check for existing pending order
+    existing_order = frappe.db.exists("Bank Transfer Order", {
+        "reference_doctype": doctype,
+        "reference_docname": docname,
+        "payer_email": user_info.email,
+        "status": ["in", ["Pending", "Receipt Uploaded"]]
+    })
+    
+    if existing_order:
+        order = frappe.get_doc("Bank Transfer Order", existing_order)
+        return {
+            "status": "existing",
+            "order_id": order.order_id,
+            "redirect_url": f"/bank-transfer-instructions/{order.order_id}",
+            "message": _("You already have a pending order for this item")
+        }
+    
+    # Generate unique order ID
+    order_id = f"BT-{uuid.uuid4().hex[:8].upper()}"
+    
+    # Create new order
+    order = frappe.get_doc({
+        "doctype": "Bank Transfer Order",
+        "order_id": order_id,
+        "status": "Pending",
+        "created_at": now_datetime(),
+        "amount": amount,
+        "currency": currency,
+        "title": title,
+        "description": f"Payment for {doctype}: {title}",
+        "payer_name": user_info.full_name,
+        "payer_email": user_info.email,
+        "payer_phone": user_info.phone,
+        "reference_doctype": doctype,
+        "reference_docname": docname,
+        "redirect_to": f"/courses/{docname}" if doctype == "LMS Course" else f"/batches/{docname}"
+    })
+    
+    order.insert(ignore_permissions=True)
+    frappe.db.commit()
+    
+    return {
+        "status": "success",
+        "order_id": order_id,
+        "redirect_url": f"/bank-transfer-instructions/{order_id}",
+        "message": _("Order created successfully")
+    }
+
+
+@frappe.whitelist(allow_guest=True)
+def get_bank_transfer_settings():
+    """
+    Get public bank transfer settings (check if enabled).
+    """
+    settings = frappe.get_single("Bank Transfer Settings")
+    return {
+        "enabled": settings.enabled,
+        "currency": settings.currency
+    }
+
+
+@frappe.whitelist(allow_guest=False)
+def check_existing_order(doctype, docname):
+    """
+    Check if user has an existing pending bank transfer order.
+    """
+    user = frappe.session.user
+    user_email = frappe.db.get_value("User", user, "email")
+    
+    existing_order = frappe.db.get_value("Bank Transfer Order", {
+        "reference_doctype": doctype,
+        "reference_docname": docname,
+        "payer_email": user_email,
+        "status": ["in", ["Pending", "Receipt Uploaded"]]
+    }, ["order_id", "status", "created_at"], as_dict=True)
+    
+    if existing_order:
+        return {
+            "exists": True,
+            "order_id": existing_order.order_id,
+            "status": existing_order.status,
+            "redirect_url": f"/bank-transfer-instructions/{existing_order.order_id}"
+        }
+    
+    return {"exists": False}
+
