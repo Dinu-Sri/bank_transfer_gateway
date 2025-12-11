@@ -16,11 +16,11 @@
                 <div class="card-body">
                     {% if order %}
                     <div class="alert alert-info">
-                        <strong>Order Reference:</strong> 
+                        <strong>Order Reference:</strong>
                         <span class="badge badge-lg bg-dark text-white p-2 fs-5">{{ order.order_id }}</span>
                         <br><small class="text-muted">Please use this reference when making the transfer</small>
                     </div>
-                    
+
                     <!-- Payment Summary -->
                     <div class="row mb-4">
                         <div class="col-md-6">
@@ -41,6 +41,8 @@
                                     <td>
                                         {% if order.status == "Pending" %}
                                         <span class="badge bg-warning">Awaiting Payment</span>
+                                        {% elif order.status == "Receipt Uploaded" %}
+                                        <span class="badge bg-info">Receipt Uploaded - Under Review</span>
                                         {% elif order.status == "Completed" %}
                                         <span class="badge bg-success">Payment Confirmed</span>
                                         {% else %}
@@ -72,7 +74,7 @@
                 </div>
             </div>
 
-            {% if order and order.status == "Pending" %}
+            {% if order and order.status in ["Pending", "Receipt Uploaded"] %}
             <!-- Bank Details Card -->
             <div class="card mb-4 border-success">
                 <div class="card-header bg-success text-white">
@@ -96,7 +98,7 @@
                                     <td class="bg-light"><strong>Account Number</strong></td>
                                     <td>
                                         <code class="fs-5">{{ settings.account_number }}</code>
-                                        <button class="btn btn-sm btn-outline-secondary ms-2" 
+                                        <button class="btn btn-sm btn-outline-secondary ms-2"
                                                 onclick="copyToClipboard('{{ settings.account_number }}')">
                                             <i class="fa fa-copy"></i>
                                         </button>
@@ -142,10 +144,78 @@
                 </div>
             </div>
 
+            <!-- Receipt Upload Card -->
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fa fa-upload"></i> Upload Payment Receipt (Optional)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if order.payment_receipt %}
+                    <div class="alert alert-success mb-3">
+                        <i class="fa fa-check-circle"></i> <strong>Receipt Uploaded!</strong>
+                        <p class="mb-0 mt-2">Your receipt is under review. We will verify your payment shortly.</p>
+                        <a href="{{ order.payment_receipt }}" target="_blank" class="btn btn-sm btn-outline-success mt-2">
+                            <i class="fa fa-eye"></i> View Uploaded Receipt
+                        </a>
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-3">
+                        After making the bank transfer, you can upload your payment receipt/slip here for faster verification.
+                        <br><strong>This is optional</strong> - you can also send your receipt via WhatsApp support.
+                    </p>
+                    {% endif %}
+
+                    <form id="receipt-upload-form" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="payment_receipt" class="form-label">
+                                <i class="fa fa-image"></i> Payment Receipt/Slip
+                            </label>
+                            <input type="file" class="form-control" id="payment_receipt" name="payment_receipt"
+                                   accept="image/*,.pdf" {% if order.payment_receipt %}disabled{% endif %}>
+                            <small class="text-muted">Accepted formats: JPG, PNG, PDF (Max 5MB)</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="receipt_notes" class="form-label">
+                                <i class="fa fa-comment"></i> Additional Notes (Optional)
+                            </label>
+                            <textarea class="form-control" id="receipt_notes" name="receipt_notes" rows="2"
+                                      placeholder="E.g., Transaction reference number, date of transfer, etc.">{{ order.receipt_notes or '' }}</textarea>
+                        </div>
+
+                        {% if not order.payment_receipt %}
+                        <button type="submit" class="btn btn-primary" id="upload-btn">
+                            <i class="fa fa-upload"></i> Upload Receipt
+                        </button>
+                        {% endif %}
+
+                        <button type="button" class="btn btn-outline-secondary" id="save-notes-btn">
+                            <i class="fa fa-save"></i> Save Notes
+                        </button>
+                    </form>
+                </div>
+            </div>
+
             <!-- Confirmation Message -->
             <div class="alert alert-warning">
                 <i class="fa fa-clock"></i> {{ settings.confirmation_message }}
             </div>
+
+            {% elif order and order.status == "Receipt Uploaded" %}
+            <!-- Receipt Uploaded Status -->
+            <div class="alert alert-info">
+                <h4><i class="fa fa-hourglass-half"></i> Payment Under Review</h4>
+                <p>Your receipt has been uploaded and is being verified by our team.</p>
+                <p><strong>Uploaded:</strong> {{ frappe.utils.format_datetime(order.receipt_uploaded_at) }}</p>
+                {% if order.payment_receipt %}
+                <a href="{{ order.payment_receipt }}" target="_blank" class="btn btn-info">
+                    <i class="fa fa-eye"></i> View Your Receipt
+                </a>
+                {% endif %}
+            </div>
+
             {% elif order and order.status == "Completed" %}
             <div class="alert alert-success">
                 <h4><i class="fa fa-check-circle"></i> Payment Confirmed!</h4>
@@ -167,6 +237,119 @@ function copyToClipboard(text) {
         frappe.show_alert({message: 'Copied to clipboard!', indicator: 'green'}, 3);
     });
 }
+
+// Handle receipt upload
+document.getElementById('receipt-upload-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const fileInput = document.getElementById('payment_receipt');
+    const notesInput = document.getElementById('receipt_notes');
+    const uploadBtn = document.getElementById('upload-btn');
+
+    if (!fileInput.files.length) {
+        frappe.show_alert({message: 'Please select a file to upload', indicator: 'orange'}, 3);
+        return;
+    }
+
+    const file = fileInput.files[0];
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+        frappe.show_alert({message: 'File size must be less than 5MB', indicator: 'red'}, 3);
+        return;
+    }
+
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Uploading...';
+
+    try {
+        // First upload the file
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('doctype', 'Bank Transfer Order');
+        formData.append('docname', '{{ order.order_id }}');
+        formData.append('is_private', '0');
+
+        const uploadResponse = await fetch('/api/method/upload_file', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Frappe-CSRF-Token': frappe.csrf_token
+            }
+        });
+
+        const uploadResult = await uploadResponse.json();
+
+        if (uploadResult.message && uploadResult.message.file_url) {
+            // Update the order with the receipt
+            const updateResponse = await fetch('/api/method/bank_transfer_gateway.bank_transfer_gateway.doctype.bank_transfer_order.bank_transfer_order.update_receipt_status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Frappe-CSRF-Token': frappe.csrf_token
+                },
+                body: JSON.stringify({
+                    order_id: '{{ order.order_id }}',
+                    file_url: uploadResult.message.file_url
+                })
+            });
+
+            const updateResult = await updateResponse.json();
+
+            if (updateResult.message && updateResult.message.status === 'success') {
+                frappe.show_alert({message: 'Receipt uploaded successfully!', indicator: 'green'}, 5);
+                // Reload page to show updated status
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                throw new Error(updateResult.message || 'Failed to update order');
+            }
+        } else {
+            throw new Error(uploadResult.exc || 'Failed to upload file');
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        frappe.show_alert({message: 'Error uploading receipt. Please try again.', indicator: 'red'}, 5);
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = '<i class="fa fa-upload"></i> Upload Receipt';
+    }
+});
+
+// Handle save notes
+document.getElementById('save-notes-btn')?.addEventListener('click', async function() {
+    const notesInput = document.getElementById('receipt_notes');
+    const btn = this;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving...';
+
+    try {
+        const response = await fetch('/api/method/bank_transfer_gateway.bank_transfer_gateway.doctype.bank_transfer_order.bank_transfer_order.upload_receipt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Frappe-CSRF-Token': frappe.csrf_token
+            },
+            body: JSON.stringify({
+                order_id: '{{ order.order_id }}',
+                receipt_notes: notesInput.value
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.message && result.message.status === 'success') {
+            frappe.show_alert({message: 'Notes saved!', indicator: 'green'}, 3);
+        } else {
+            throw new Error(result.message || 'Failed to save notes');
+        }
+    } catch (error) {
+        console.error('Save error:', error);
+        frappe.show_alert({message: 'Error saving notes', indicator: 'red'}, 3);
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa fa-save"></i> Save Notes';
+});
 </script>
 {% endblock %}
 

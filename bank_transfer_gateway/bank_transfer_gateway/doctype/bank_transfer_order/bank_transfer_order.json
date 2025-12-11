@@ -19,11 +19,17 @@
         "section_break_payer",
         "payer_name",
         "payer_email",
+        "payer_phone",
+        "section_break_receipt",
+        "payment_receipt",
+        "receipt_uploaded_at",
+        "receipt_notes",
         "section_break_reference",
         "reference_doctype",
         "reference_docname",
         "redirect_to",
-        "section_break_notes",
+        "section_break_confirmation",
+        "confirmation_method",
         "admin_notes"
     ],
     "fields": [
@@ -42,7 +48,7 @@
             "in_list_view": 1,
             "in_standard_filter": 1,
             "label": "Status",
-            "options": "Pending\nCompleted\nCancelled\nExpired"
+            "options": "Pending\nReceipt Uploaded\nCompleted\nCancelled\nExpired"
         },
         {
             "fieldname": "column_break_1",
@@ -110,6 +116,35 @@
             "options": "Email"
         },
         {
+            "fieldname": "payer_phone",
+            "fieldtype": "Data",
+            "label": "Payer Phone",
+            "options": "Phone"
+        },
+        {
+            "fieldname": "section_break_receipt",
+            "fieldtype": "Section Break",
+            "label": "Payment Receipt"
+        },
+        {
+            "description": "Payment receipt/slip uploaded by student",
+            "fieldname": "payment_receipt",
+            "fieldtype": "Attach Image",
+            "label": "Payment Receipt"
+        },
+        {
+            "fieldname": "receipt_uploaded_at",
+            "fieldtype": "Datetime",
+            "label": "Receipt Uploaded At",
+            "read_only": 1
+        },
+        {
+            "description": "Notes from student about the payment",
+            "fieldname": "receipt_notes",
+            "fieldtype": "Small Text",
+            "label": "Student Notes"
+        },
+        {
             "fieldname": "section_break_reference",
             "fieldtype": "Section Break",
             "label": "Reference"
@@ -132,11 +167,19 @@
             "label": "Redirect To"
         },
         {
-            "fieldname": "section_break_notes",
+            "fieldname": "section_break_confirmation",
             "fieldtype": "Section Break",
-            "label": "Notes"
+            "label": "Admin Confirmation"
         },
         {
+            "description": "How the payment was verified (e.g., Receipt uploaded via system, WhatsApp support, Bank statement, etc.)",
+            "fieldname": "confirmation_method",
+            "fieldtype": "Select",
+            "label": "Confirmation Method",
+            "options": "\nReceipt uploaded via system\nWhatsApp support\nBank statement verification\nDirect bank confirmation\nOther"
+        },
+        {
+            "description": "Internal notes for admin reference and future account identification",
             "fieldname": "admin_notes",
             "fieldtype": "Text",
             "label": "Admin Notes"
