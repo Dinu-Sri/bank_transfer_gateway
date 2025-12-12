@@ -4,6 +4,7 @@ Includes response injection for LMS SPA pages
 """
 
 import frappe
+import time
 
 
 def inject_bank_transfer_script(response=None, request=None):
@@ -34,8 +35,10 @@ def inject_bank_transfer_script(response=None, request=None):
         if not hasattr(response, 'data') or not response.data:
             return
         
-        # Script tag to inject
-        script_tag = b'<script src="/assets/bank_transfer_gateway/js/bank_transfer.js"></script></body>'
+        # Script tag to inject with cache-busting version
+        # Version 2 - includes CSRF fix and improved button detection
+        version = "v2"
+        script_tag = f'<script src="/assets/bank_transfer_gateway/js/bank_transfer.js?{version}"></script></body>'.encode()
         
         # Only inject if </body> exists and script not already present
         if b'</body>' in response.data and b'bank_transfer_gateway' not in response.data:
