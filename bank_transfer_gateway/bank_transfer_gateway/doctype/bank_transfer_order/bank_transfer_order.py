@@ -11,7 +11,7 @@ class BankTransferOrder(Document):
 
     def before_save(self):
         """Update timestamps based on status changes"""
-        if self.status == "Completed" and not self.confirmed_at:
+        if self.status == "Confirmed" and not self.confirmed_at:
             self.confirmed_at = now_datetime()
 
         # Update receipt uploaded timestamp
@@ -21,10 +21,12 @@ class BankTransferOrder(Document):
     def on_update(self):
         """Handle status changes"""
         if self.has_value_changed("status"):
-            if self.status == "Completed":
+            if self.status == "Confirmed":
                 self.process_payment_completion()
             elif self.status == "Receipt Uploaded":
                 self.notify_admin_receipt_uploaded()
+            elif self.status == "Rejected":
+                self.notify_student_rejection()
 
     def notify_admin_receipt_uploaded(self):
         """Notify admin when a student uploads a receipt"""
@@ -54,6 +56,34 @@ class BankTransferOrder(Document):
                 )
             except Exception as e:
                 frappe.log_error(f"Failed to send receipt notification: {str(e)}")
+
+    def notify_student_rejection(self):
+        """Notify student when payment is rejected"""
+        if not self.payer_email:
+            return
+        try:
+            frappe.sendmail(
+                recipients=[self.payer_email],
+                subject=_("Payment Rejected - {0}").format(self.title or self.order_id),
+                message=_("""
+                    <p>Dear {payer_name},</p>
+                    <p>Unfortunately, we could not verify your payment for the following order:</p>
+                    <p><strong>Order Reference:</strong> {order_id}</p>
+                    <p><strong>Amount:</strong> {currency} {amount}</p>
+                    <p><strong>Item:</strong> {title}</p>
+                    <p><strong>Reason:</strong> {reason}</p>
+                    <p>Please check your payment details and try again, or contact support if you believe this is an error.</p>
+                """).format(
+                    payer_name=self.payer_name or "Student",
+                    order_id=self.order_id,
+                    currency=self.currency,
+                    amount=self.amount,
+                    title=self.title or "N/A",
+                    reason=self.rejection_reason or "Payment could not be verified"
+                )
+            )
+        except Exception as e:
+            frappe.log_error(f"Failed to send rejection notification: {str(e)}")
 
     def process_payment_completion(self):
         """
@@ -166,7 +196,7 @@ def confirm_payment(order_id, confirmation_method=None, admin_notes=None):
         frappe.throw(_("Not permitted"), frappe.PermissionError)
 
     order = frappe.get_doc("Bank Transfer Order", {"order_id": order_id})
-    order.status = "Completed"
+    order.status = "Confirmed"
     if confirmation_method:
         order.confirmation_method = confirmation_method
     if admin_notes:
@@ -175,6 +205,31 @@ def confirm_payment(order_id, confirmation_method=None, admin_notes=None):
     frappe.db.commit()
 
     return {"status": "success", "message": _("Payment confirmed successfully")}
+
+
+@frappe.whitelist(allow_guest=False)
+def reject_payment(order_id, rejection_reason=None, admin_notes=None):
+    """
+    Whitelist method for admin to reject a bank transfer payment.
+
+    Args:
+        order_id: The order ID to reject
+        rejection_reason: Reason for rejection (shown to student)
+        admin_notes: Internal notes for admin reference
+    """
+    if not frappe.has_permission("Bank Transfer Order", "write"):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+    order = frappe.get_doc("Bank Transfer Order", {"order_id": order_id})
+    order.status = "Rejected"
+    if rejection_reason:
+        order.rejection_reason = rejection_reason
+    if admin_notes:
+        order.admin_notes = admin_notes
+    order.save()
+    frappe.db.commit()
+
+    return {"status": "success", "message": _("Payment rejected")}
 
 
 @frappe.whitelist(allow_guest=False)
@@ -324,9 +379,9 @@ def create_bank_transfer_order(doctype, docname, title=None, amount=None, curren
     
     # Check for existing pending order
     existing_order = frappe.db.exists("Bank Transfer Order", {
-        "reference_doctype": doctype,
-        "reference_docname": docname,
-        "payer_email": user_info.email,
+        "source_doctype": doctype,
+        "source_docname": docname,
+        "user": user,
         "status": ["in", ["Pending", "Receipt Uploaded"]]
     })
     
@@ -347,11 +402,14 @@ def create_bank_transfer_order(doctype, docname, title=None, amount=None, curren
         "doctype": "Bank Transfer Order",
         "order_id": order_id,
         "status": "Pending",
+        "user": user,
         "created_at": now_datetime(),
         "amount": amount,
         "currency": currency,
         "title": title,
         "description": f"Payment for {doctype}: {title}",
+        "source_doctype": doctype,
+        "source_docname": docname,
         "payer_name": user_info.full_name,
         "payer_email": user_info.email,
         "payer_phone": user_info.phone,
@@ -389,12 +447,11 @@ def check_existing_order(doctype, docname):
     Check if user has an existing pending bank transfer order.
     """
     user = frappe.session.user
-    user_email = frappe.db.get_value("User", user, "email")
     
     existing_order = frappe.db.get_value("Bank Transfer Order", {
-        "reference_doctype": doctype,
-        "reference_docname": docname,
-        "payer_email": user_email,
+        "source_doctype": doctype,
+        "source_docname": docname,
+        "user": user,
         "status": ["in", ["Pending", "Receipt Uploaded"]]
     }, ["order_id", "status", "created_at"], as_dict=True)
     

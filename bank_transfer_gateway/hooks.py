@@ -27,6 +27,10 @@ website_route_rules = [
         "from_route": "/bank-transfer-instructions/<order_id>",
         "to_route": "bank_transfer_instructions",
     },
+    {
+        "from_route": "/my-payments",
+        "to_route": "my_payments",
+    },
 ]
 
 # Whitelisted Methods

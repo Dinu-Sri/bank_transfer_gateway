@@ -13,10 +13,40 @@ def on_lms_payment_update(doc, method):
     """
     Hook called when LMS Payment document is updated.
     Automatically creates enrollment when payment_received is checked.
+    Also syncs Bank Transfer Order status.
     """
     # Check if payment_received was just set to True
     if doc.payment_received and doc.has_value_changed("payment_received"):
+        # Create enrollment
         create_enrollment_from_payment(doc)
+        
+        # Also update corresponding Bank Transfer Order if exists
+        sync_bank_transfer_order_status(doc)
+
+
+def sync_bank_transfer_order_status(payment_doc):
+    """
+    Update Bank Transfer Order status when LMS Payment is confirmed.
+    This keeps both records in sync.
+    """
+    try:
+        # Find Bank Transfer Order by reference
+        order_name = frappe.db.get_value("Bank Transfer Order", {
+            "reference_doctype": payment_doc.payment_for_document_type,
+            "reference_docname": payment_doc.payment_for_document,
+            "payer_email": frappe.db.get_value("User", payment_doc.member, "email"),
+            "status": ["in", ["Pending", "Receipt Uploaded"]]
+        })
+        
+        if order_name:
+            order = frappe.get_doc("Bank Transfer Order", order_name)
+            order.status = "Confirmed"
+            order.confirmation_method = "Admin confirmed via LMS Transaction"
+            order.admin_notes = f"Confirmed via LMS Payment: {payment_doc.name}"
+            order.save(ignore_permissions=True)
+            frappe.db.commit()
+    except Exception as e:
+        frappe.log_error(f"Failed to sync Bank Transfer Order status: {str(e)}")
 
 
 def create_enrollment_from_payment(payment_doc):
