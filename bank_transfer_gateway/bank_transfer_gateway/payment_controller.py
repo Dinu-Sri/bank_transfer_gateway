@@ -12,41 +12,144 @@ import uuid
 def on_lms_payment_update(doc, method):
     """
     Hook called when LMS Payment document is updated.
-    Automatically creates enrollment when payment_received is checked.
+    - Creates enrollment when payment_received is checked
+    - Removes enrollment when payment_received is unchecked
     Also syncs Bank Transfer Order status.
     """
-    # Check if payment_received was just set to True
-    if doc.payment_received and doc.has_value_changed("payment_received"):
-        # Create enrollment
+    # Only act if payment_received field changed
+    if not doc.has_value_changed("payment_received"):
+        return
+    
+    if doc.payment_received:
+        # Payment confirmed - create enrollment
         create_enrollment_from_payment(doc)
-        
-        # Also update corresponding Bank Transfer Order if exists
-        sync_bank_transfer_order_status(doc)
+        # Update Bank Transfer Order to Confirmed
+        sync_bank_transfer_order_status(doc, confirmed=True)
+    else:
+        # Payment revoked - remove enrollment
+        remove_enrollment_from_payment(doc)
+        # Update Bank Transfer Order back to Receipt Uploaded
+        sync_bank_transfer_order_status(doc, confirmed=False)
 
 
-def sync_bank_transfer_order_status(payment_doc):
+def sync_bank_transfer_order_status(payment_doc, confirmed=True):
     """
-    Update Bank Transfer Order status when LMS Payment is confirmed.
+    Update Bank Transfer Order status when LMS Payment status changes.
     This keeps both records in sync.
     """
     try:
         # Find Bank Transfer Order by reference
-        order_name = frappe.db.get_value("Bank Transfer Order", {
-            "reference_doctype": payment_doc.payment_for_document_type,
-            "reference_docname": payment_doc.payment_for_document,
-            "payer_email": frappe.db.get_value("User", payment_doc.member, "email"),
-            "status": ["in", ["Pending", "Receipt Uploaded"]]
-        })
+        if confirmed:
+            # Looking for pending orders to mark as confirmed
+            order_name = frappe.db.get_value("Bank Transfer Order", {
+                "reference_doctype": payment_doc.payment_for_document_type,
+                "reference_docname": payment_doc.payment_for_document,
+                "payer_email": frappe.db.get_value("User", payment_doc.member, "email"),
+                "status": ["in", ["Pending", "Receipt Uploaded"]]
+            })
+            new_status = "Confirmed"
+            method_note = "Admin confirmed via LMS Transaction"
+        else:
+            # Looking for confirmed orders to revert
+            order_name = frappe.db.get_value("Bank Transfer Order", {
+                "reference_doctype": payment_doc.payment_for_document_type,
+                "reference_docname": payment_doc.payment_for_document,
+                "payer_email": frappe.db.get_value("User", payment_doc.member, "email"),
+                "status": "Confirmed"
+            })
+            new_status = "Receipt Uploaded"
+            method_note = "Payment revoked via LMS Transaction"
         
         if order_name:
             order = frappe.get_doc("Bank Transfer Order", order_name)
-            order.status = "Confirmed"
-            order.confirmation_method = "Admin confirmed via LMS Transaction"
-            order.admin_notes = f"Confirmed via LMS Payment: {payment_doc.name}"
+            order.status = new_status
+            order.confirmation_method = method_note
+            admin_note = f"{'Confirmed' if confirmed else 'Revoked'} via LMS Payment: {payment_doc.name} at {now_datetime()}"
+            order.admin_notes = (order.admin_notes or "") + "\n" + admin_note
             order.save(ignore_permissions=True)
             frappe.db.commit()
     except Exception as e:
         frappe.log_error(f"Failed to sync Bank Transfer Order status: {str(e)}")
+
+
+def remove_enrollment_from_payment(payment_doc):
+    """
+    Remove LMS Enrollment when payment is revoked.
+    This locks the user out of the course/batch.
+    """
+    try:
+        member = payment_doc.member
+        doctype = payment_doc.payment_for_document_type
+        docname = payment_doc.payment_for_document
+        
+        if not member or not docname:
+            return
+        
+        # Handle course enrollment removal
+        if doctype == "LMS Course":
+            enrollment = frappe.db.get_value("LMS Enrollment", 
+                {"member": member, "course": docname}, "name")
+            
+            if enrollment:
+                frappe.delete_doc("LMS Enrollment", enrollment, ignore_permissions=True)
+                frappe.db.commit()
+                frappe.msgprint(_("Enrollment removed for {0} from course {1}").format(member, docname))
+                
+                # Notify the user
+                notify_enrollment_revoked(member, docname, "LMS Course")
+        
+        # Handle batch enrollment removal
+        elif doctype == "LMS Batch":
+            enrollment = frappe.db.get_value("LMS Batch Enrollment", 
+                {"member": member, "batch": docname}, "name")
+            
+            if enrollment:
+                frappe.delete_doc("LMS Batch Enrollment", enrollment, ignore_permissions=True)
+                frappe.db.commit()
+                frappe.msgprint(_("Enrollment removed for {0} from batch {1}").format(member, docname))
+                
+                # Notify the user
+                notify_enrollment_revoked(member, docname, "LMS Batch")
+                
+    except Exception as e:
+        frappe.log_error(f"Error removing enrollment: {str(e)}")
+        frappe.throw(_("Failed to remove enrollment: {0}").format(str(e)))
+
+
+def notify_enrollment_revoked(member, docname, doctype):
+    """
+    Send email notification when enrollment is revoked due to payment issue.
+    """
+    try:
+        user_email = frappe.db.get_value("User", member, "email")
+        user_name = frappe.db.get_value("User", member, "full_name") or member
+        
+        if not user_email:
+            return
+        
+        if doctype == "LMS Course":
+            title = frappe.db.get_value("LMS Course", docname, "title") or docname
+            item_type = "course"
+        else:
+            title = frappe.db.get_value("LMS Batch", docname, "title") or docname
+            item_type = "batch"
+        
+        frappe.sendmail(
+            recipients=[user_email],
+            subject=_("Access Revoked - {0}").format(title),
+            message=_("""
+                <p>Dear {user_name},</p>
+                <p>Your access to the {item_type} <strong>{title}</strong> has been revoked due to a payment issue.</p>
+                <p>If you believe this is an error, please contact our support team with your payment details.</p>
+                <p>If your payment is still pending, please complete the payment process to regain access.</p>
+            """).format(
+                user_name=user_name,
+                item_type=item_type,
+                title=title
+            )
+        )
+    except Exception as e:
+        frappe.log_error(f"Failed to send revocation notification: {str(e)}")
 
 
 def create_enrollment_from_payment(payment_doc):
