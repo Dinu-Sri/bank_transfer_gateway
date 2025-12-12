@@ -12,15 +12,18 @@
     // Wait for page to load
     document.addEventListener('DOMContentLoaded', function() {
         // Delay to ensure LMS components are loaded
-        setTimeout(initBankTransfer, 1000);
+        setTimeout(initBankTransfer, 1500);
     });
 
-    // Also run when navigating within SPA
-    if (typeof frappe !== 'undefined') {
-        frappe.router && frappe.router.on('change', function() {
-            setTimeout(initBankTransfer, 1000);
-        });
-    }
+    // Also run when URL changes (SPA navigation)
+    let lastUrl = location.href;
+    new MutationObserver(() => {
+        const url = location.href;
+        if (url !== lastUrl) {
+            lastUrl = url;
+            setTimeout(initBankTransfer, 1500);
+        }
+    }).observe(document, {subtree: true, childList: true});
 
     async function initBankTransfer() {
         // Check if we're on a course or batch page
@@ -60,25 +63,64 @@
         await checkAndUpdatePaymentButton('LMS Batch', batchName);
     }
 
-    async function checkAndUpdatePaymentButton(doctype, docname) {
-        // Skip for guest users
-        if (typeof frappe === 'undefined' || frappe.session.user === 'Guest') {
-            return;
-        }
-
+    // Helper function to make API calls without requiring frappe object
+    async function callAPI(method, args) {
         try {
-            // Check for existing pending order
-            const response = await frappe.call({
-                method: 'bank_transfer_gateway.bank_transfer_gateway.doctype.bank_transfer_order.bank_transfer_order.check_existing_order',
-                args: {
-                    doctype: doctype,
-                    docname: docname
-                }
+            const response = await fetch('/api/method/' + method, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Frappe-CSRF-Token': getCSRFToken()
+                },
+                body: JSON.stringify(args)
             });
+            
+            if (!response.ok) {
+                throw new Error('API call failed');
+            }
+            
+            const data = await response.json();
+            return data;
+        } catch (e) {
+            console.log('Bank Transfer Gateway API Error:', e);
+            return null;
+        }
+    }
+    
+    // Get CSRF token from cookie or meta tag
+    function getCSRFToken() {
+        // Try to get from cookie
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'csrf_token') {
+                return value;
+            }
+        }
+        // Try meta tag
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) {
+            return meta.getAttribute('content');
+        }
+        // Fallback - try frappe if available
+        if (typeof frappe !== 'undefined' && frappe.csrf_token) {
+            return frappe.csrf_token;
+        }
+        return '';
+    }
 
-            if (response.message && response.message.exists) {
+    async function checkAndUpdatePaymentButton(doctype, docname) {
+        try {
+            // Check for existing pending order using fetch API
+            const result = await callAPI(
+                'bank_transfer_gateway.bank_transfer_gateway.doctype.bank_transfer_order.bank_transfer_order.check_existing_order',
+                { doctype: doctype, docname: docname }
+            );
+
+            if (result && result.message && result.message.exists) {
                 // User has a pending payment - update the button
-                updateButtonForPendingPayment(response.message);
+                console.log('Bank Transfer Gateway: Found pending payment', result.message);
+                updateButtonForPendingPayment(result.message);
             } else {
                 // No pending order - add bank transfer option if course is paid
                 addBankTransferButton(doctype, docname);
