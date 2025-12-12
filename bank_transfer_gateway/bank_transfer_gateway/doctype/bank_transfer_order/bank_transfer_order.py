@@ -453,27 +453,55 @@ def get_bank_transfer_settings():
 @frappe.whitelist(allow_guest=False)
 def check_existing_order(doctype, docname):
     """
-    Check if user has an existing pending bank transfer order.
+    Check if user has an existing pending payment.
+    First checks LMS Payment, then Bank Transfer Order.
     """
     user = frappe.session.user
     user_email = frappe.db.get_value("User", user, "email")
     
-    # First try with new fields (source_doctype, source_docname, user)
+    # First check LMS Payment for pending payments (payment_received = 0)
+    lms_payment = frappe.db.get_value("LMS Payment", {
+        "member": user,
+        "payment_for_document_type": doctype,
+        "payment_for_document": docname,
+        "payment_received": 0
+    }, ["name", "billing_name", "amount"], as_dict=True)
+    
+    if lms_payment:
+        # Check if there's a corresponding Bank Transfer Order
+        bto = frappe.db.get_value("Bank Transfer Order", {
+            "source_doctype": doctype,
+            "source_docname": docname,
+            "user": user,
+            "status": ["in", ["Pending", "Receipt Uploaded", "Under Review"]]
+        }, ["order_id", "status"], as_dict=True)
+        
+        if bto:
+            return {
+                "exists": True,
+                "order_id": bto.order_id,
+                "status": bto.status,
+                "redirect_url": f"/bank-transfer-instructions/{bto.order_id}",
+                "lms_payment": lms_payment.name
+            }
+        else:
+            # LMS Payment exists but no Bank Transfer Order
+            # Return info to redirect to billing page to complete payment
+            return {
+                "exists": True,
+                "order_id": None,
+                "status": "Pending",
+                "redirect_url": f"/lms/billing/{doctype.lower().replace(' ', '-')}/{docname}",
+                "lms_payment": lms_payment.name
+            }
+    
+    # Fallback: Check Bank Transfer Order directly
     existing_order = frappe.db.get_value("Bank Transfer Order", {
         "source_doctype": doctype,
         "source_docname": docname,
         "user": user,
-        "status": ["in", ["Pending", "Receipt Uploaded"]]
-    }, ["order_id", "status", "created_at"], as_dict=True)
-    
-    # Fallback: check with old fields (reference_doctype, reference_docname, payer_email)
-    if not existing_order:
-        existing_order = frappe.db.get_value("Bank Transfer Order", {
-            "reference_doctype": doctype,
-            "reference_docname": docname,
-            "payer_email": user_email,
-            "status": ["in", ["Pending", "Receipt Uploaded"]]
-        }, ["order_id", "status", "created_at"], as_dict=True)
+        "status": ["in", ["Pending", "Receipt Uploaded", "Under Review"]]
+    }, ["order_id", "status"], as_dict=True)
     
     if existing_order:
         return {

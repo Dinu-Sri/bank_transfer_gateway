@@ -135,10 +135,11 @@
                 buyButton.innerHTML = '<i class="fa fa-credit-card"></i> Complete Payment';
                 buyButton.className = buyButton.className.replace('btn-primary', 'btn-warning');
                 buyButton.classList.add('btn-warning');
-            } else if (orderInfo.status === 'Receipt Uploaded') {
+            } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
                 buyButton.innerHTML = '<i class="fa fa-clock"></i> Payment Under Review';
                 buyButton.className = buyButton.className.replace('btn-primary', 'btn-info');
                 buyButton.classList.add('btn-info');
+                buyButton.disabled = true;
             }
             
             // Update click handler
@@ -169,20 +170,25 @@
         
         let statusText = '';
         let actionText = '';
+        let orderIdText = '';
         
         if (orderInfo.status === 'Pending') {
-            statusText = 'You have a pending bank transfer payment for this course.';
+            statusText = 'You have a pending payment for this course.';
             actionText = 'Complete Payment';
-        } else if (orderInfo.status === 'Receipt Uploaded') {
+        } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
             statusText = 'Your payment receipt has been uploaded and is under review.';
             actionText = 'View Payment Status';
+        }
+        
+        if (orderInfo.order_id) {
+            orderIdText = `<br><small>Order ID: ${orderInfo.order_id}</small>`;
         }
 
         banner.innerHTML = `
             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                 <div>
                     <strong><i class="fa fa-info-circle"></i> ${statusText}</strong>
-                    <br><small>Order ID: ${orderInfo.order_id}</small>
+                    ${orderIdText}
                 </div>
                 <a href="${orderInfo.redirect_url}" class="btn btn-warning btn-sm">
                     <i class="fa fa-arrow-right"></i> ${actionText}
