@@ -6,7 +6,7 @@ Includes response injection for LMS SPA pages
 import frappe
 
 
-def inject_bank_transfer_script(response):
+def inject_bank_transfer_script(response=None, request=None):
     """
     Inject bank transfer script into HTML responses.
     
@@ -17,18 +17,22 @@ def inject_bank_transfer_script(response):
     - Lives in our app (not LMS)
     - Survives LMS/Frappe updates
     - Gets deployed with our app via git
+    
+    Args:
+        response: Werkzeug Response object
+        request: Werkzeug Request object
     """
     try:
         # Only process HTML responses
         if not response or not hasattr(response, 'content_type'):
-            return response
+            return
             
         if not response.content_type or 'text/html' not in response.content_type:
-            return response
+            return
         
         # Check if response has data
         if not hasattr(response, 'data') or not response.data:
-            return response
+            return
         
         # Script tag to inject
         script_tag = b'<script src="/assets/bank_transfer_gateway/js/bank_transfer.js"></script></body>'
@@ -40,5 +44,3 @@ def inject_bank_transfer_script(response):
     except Exception as e:
         # Log error but don't break the response
         frappe.log_error(f"Bank Transfer Gateway: Script injection error: {str(e)}")
-    
-    return response
