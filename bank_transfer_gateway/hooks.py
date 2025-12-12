@@ -10,6 +10,10 @@ required_apps = ["frappe"]
 # ------------
 after_install = "bank_transfer_gateway.bank_transfer_gateway.setup.after_install"
 
+# Response Hook - Inject JS into all HTML pages (including LMS Vue SPA)
+# This is the most stable method that survives LMS updates
+after_request = ["bank_transfer_gateway.bank_transfer_gateway.utils.inject_bank_transfer_script"]
+
 # Document Events
 # ----------------
 # Hook on document methods and events
