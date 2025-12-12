@@ -107,23 +107,32 @@
     
     // Get CSRF token from cookie or meta tag
     function getCSRFToken() {
+        // First try window.csrf_token (used by LMS/Frappe)
+        if (typeof window !== 'undefined' && window.csrf_token) {
+            console.log('Bank Transfer Gateway: Got CSRF from window.csrf_token');
+            return window.csrf_token;
+        }
+        // Try frappe.csrf_token
+        if (typeof frappe !== 'undefined' && frappe.csrf_token) {
+            console.log('Bank Transfer Gateway: Got CSRF from frappe.csrf_token');
+            return frappe.csrf_token;
+        }
         // Try to get from cookie
         const cookies = document.cookie.split(';');
         for (let cookie of cookies) {
             const [name, value] = cookie.trim().split('=');
             if (name === 'csrf_token') {
+                console.log('Bank Transfer Gateway: Got CSRF from cookie');
                 return value;
             }
         }
         // Try meta tag
         const meta = document.querySelector('meta[name="csrf-token"]');
         if (meta) {
+            console.log('Bank Transfer Gateway: Got CSRF from meta tag');
             return meta.getAttribute('content');
         }
-        // Fallback - try frappe if available
-        if (typeof frappe !== 'undefined' && frappe.csrf_token) {
-            return frappe.csrf_token;
-        }
+        console.log('Bank Transfer Gateway: No CSRF token found!');
         return '';
     }
 
