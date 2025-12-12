@@ -4,6 +4,38 @@
 
 ---
 
+## ✅ MAJOR MILESTONE ACHIEVED - JS Injection Working!
+
+**Date:** December 12, 2025
+
+The JavaScript file is now successfully being injected into ALL pages including the LMS Vue SPA pages!
+
+### What Was Accomplished
+1. ✅ Identified that LMS uses Vue.js SPA which bypasses Frappe's standard `web_include_js` hook
+2. ✅ Researched Frappe's `after_request` hook from source code (`frappe/app.py`)
+3. ✅ Implemented response injection via `after_request` hook
+4. ✅ Fixed `apps.txt` to include our app in the hooks resolution
+5. ✅ Cleared Redis cache and verified hook registration
+6. ✅ Script now loads on LMS course pages
+
+### Current Console Output (Working!)
+```
+Bank Transfer Gateway: Script loaded
+Bank Transfer Gateway: DOMContentLoaded fired
+Bank Transfer Gateway: initBankTransfer called, path: /lms/
+Bank Transfer Gateway: initBankTransfer called, path: /lms/courses/quickbooks-master-course
+Bank Transfer Gateway: Detected course page
+```
+
+### Current Error to Fix
+```
+Failed to load resource: 400 error on /api/method/bank_tra..ck_existing_order:1
+Bank Transfer Gateway API Error: Error: API call failed
+Bank Transfer: Could not find button container
+```
+
+---
+
 ## 🎯 Project Goal
 
 When a student initiates a bank transfer payment for a course but doesn't complete the payment submission:
@@ -205,8 +237,36 @@ observer.observe(document.body, { childList: true, subtree: true });
 ### Key File: hooks.py
 
 ```python
-app_include_js = []
-web_include_js = ["/assets/bank_transfer_gateway/js/bank_transfer.js"]
+# Response Hook - Inject JS into all HTML pages (including LMS Vue SPA)
+after_request = ["bank_transfer_gateway.bank_transfer_gateway.utils.inject_bank_transfer_script"]
+
+# Also keep the standard web_include_js for non-SPA pages
+web_include_js = "/assets/bank_transfer_gateway/js/bank_transfer.js"
+```
+
+### Key File: utils.py (NEW - Script Injection)
+
+```python
+def inject_bank_transfer_script(response=None, request=None):
+    """
+    Inject bank transfer script into HTML responses.
+    This hook runs after every request and injects our JavaScript
+    into HTML pages, ensuring it loads even on Vue SPA pages like LMS.
+    """
+    try:
+        if not response or not hasattr(response, 'content_type'):
+            return
+        if not response.content_type or 'text/html' not in response.content_type:
+            return
+        if not hasattr(response, 'data') or not response.data:
+            return
+        
+        script_tag = b'<script src="/assets/bank_transfer_gateway/js/bank_transfer.js"></script></body>'
+        
+        if b'</body>' in response.data and b'bank_transfer_gateway' not in response.data:
+            response.data = response.data.replace(b'</body>', script_tag)
+    except Exception as e:
+        frappe.log_error(f"Bank Transfer Gateway: Script injection error: {str(e)}")
 ```
 
 ---
@@ -219,25 +279,58 @@ web_include_js = ["/assets/bank_transfer_gateway/js/bank_transfer.js"]
 4. **CSS assets fixed** - all pages styling works
 5. **API endpoint works** - `check_existing_order` returns correct data when called directly
 6. **JS file exists** - at `/assets/bank_transfer_gateway/js/bank_transfer.js` in frontend container
+7. **✅ JS INJECTION WORKING** - Script now loads on ALL pages including LMS Vue SPA!
 
 ---
 
-## ❌ Current Problem
+## ❌ Current Problem (NEXT TO FIX)
 
-### JS Not Loading on LMS Pages
+### API Call Returning 400 Error
 
 **The Issue:**
+- JavaScript is loading correctly ✅
+- Script detects course page correctly ✅
+- API call to `check_existing_order` returns 400 error
+- Button container not found (may be Vue component selector issue)
+
+**Console Errors:**
+```
+Failed to load resource: 400 error
+Bank Transfer Gateway API Error: Error: API call failed
+Bank Transfer: Could not find button container
+```
+
+**Next Steps:**
+1. Fix the API endpoint path in bank_transfer.js
+2. Update button selector for Vue-rendered components
+
+---
+
+## ✅ SOLVED: JS Not Loading on LMS Pages
+
+### The Problem (SOLVED!)
 - LMS uses Vue.js SPA (Single Page Application)
 - Frappe's `web_include_js` hook only works for traditional Jinja-rendered pages
 - LMS pages don't use Frappe's standard template system
-- The bank_transfer.js script is NOT being injected into LMS pages
 
-**Evidence:**
-- Page source doesn't show the script tag
-- Console doesn't show "Bank Transfer Gateway: Script loaded"
-- The script works on non-LMS pages (home, login, etc.)
+### The Solution: `after_request` Hook
+We used Frappe's `after_request` hook to inject the script tag into the HTML response before it's sent to the browser.
 
-### Attempted Solutions
+**Why This Works:**
+- `after_request` runs AFTER the response is generated but BEFORE it's sent
+- Works for ALL HTML responses, including Vue SPA pages
+- Lives in our app code (not LMS) - survives LMS updates
+- No need to modify Nginx or Docker configuration
+
+**Key Fix - apps.txt:**
+The hook wasn't being registered because `bank_transfer_gateway` wasn't in `/home/frappe/frappe-bench/sites/apps.txt`. After adding it:
+```bash
+echo "bank_transfer_gateway" >> /home/frappe/frappe-bench/sites/apps.txt
+```
+
+Then flushing Redis cache and restarting made it work.
+
+### Attempted Solutions (Before Finding after_request)
 
 1. **hooks.py web_include_js** - Doesn't work for Vue SPA
 2. **Website Settings > Head HTML** - Added script tag, but LMS doesn't use this
