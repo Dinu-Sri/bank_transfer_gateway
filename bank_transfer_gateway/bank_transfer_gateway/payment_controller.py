@@ -9,6 +9,121 @@ from frappe.utils import now_datetime
 import uuid
 
 
+def on_lms_payment_update(doc, method):
+    """
+    Hook called when LMS Payment document is updated.
+    Automatically creates enrollment when payment_received is checked.
+    """
+    # Check if payment_received was just set to True
+    if doc.payment_received and doc.has_value_changed("payment_received"):
+        create_enrollment_from_payment(doc)
+
+
+def create_enrollment_from_payment(payment_doc):
+    """
+    Create LMS Enrollment when payment is confirmed.
+    Works for both course and batch payments.
+    """
+    try:
+        member = payment_doc.member
+        doctype = payment_doc.payment_for_document_type
+        docname = payment_doc.payment_for_document
+        
+        if not member or not docname:
+            frappe.log_error(f"Missing member or document info for payment {payment_doc.name}")
+            return
+        
+        # Handle certificate-only purchase
+        if payment_doc.payment_for_certificate:
+            # For certificate purchase, just update existing enrollment
+            if frappe.db.exists("LMS Enrollment", {"member": member, "course": docname}):
+                frappe.db.set_value(
+                    "LMS Enrollment",
+                    {"member": member, "course": docname},
+                    {
+                        "purchased_certificate": 1,
+                        "payment": payment_doc.name
+                    }
+                )
+                frappe.db.commit()
+                frappe.msgprint(_("Certificate purchase recorded for {0}").format(member))
+            return
+        
+        # Handle course enrollment
+        if doctype == "LMS Course":
+            # Check if already enrolled
+            if frappe.db.exists("LMS Enrollment", {"member": member, "course": docname}):
+                frappe.msgprint(_("User {0} is already enrolled in this course").format(member))
+                return
+            
+            # Create enrollment
+            enrollment = frappe.get_doc({
+                "doctype": "LMS Enrollment",
+                "member": member,
+                "course": docname,
+                "member_type": "Student",
+                "payment": payment_doc.name
+            })
+            enrollment.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+            frappe.msgprint(_("Successfully enrolled {0} in course {1}").format(member, docname))
+            
+            # Send confirmation email
+            send_enrollment_confirmation(member, docname, payment_doc)
+        
+        # Handle batch enrollment
+        elif doctype == "LMS Batch":
+            # Check if already enrolled
+            if frappe.db.exists("LMS Batch Enrollment", {"member": member, "batch": docname}):
+                frappe.msgprint(_("User {0} is already enrolled in this batch").format(member))
+                return
+            
+            # Create batch enrollment
+            enrollment = frappe.get_doc({
+                "doctype": "LMS Batch Enrollment",
+                "member": member,
+                "batch": docname,
+                "payment": payment_doc.name,
+                "source": payment_doc.source
+            })
+            enrollment.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+            frappe.msgprint(_("Successfully enrolled {0} in batch {1}").format(member, docname))
+            
+    except Exception as e:
+        frappe.log_error(f"Error creating enrollment: {str(e)}")
+        frappe.throw(_("Failed to create enrollment: {0}").format(str(e)))
+
+
+def send_enrollment_confirmation(member, course, payment_doc):
+    """Send enrollment confirmation email to the student"""
+    try:
+        user = frappe.get_doc("User", member)
+        course_title = frappe.db.get_value("LMS Course", course, "title")
+        
+        frappe.sendmail(
+            recipients=[member],
+            subject=_("Enrollment Confirmed - {0}").format(course_title),
+            message=_("""
+                <p>Dear {name},</p>
+                <p>Great news! Your payment has been confirmed and you are now enrolled in:</p>
+                <p><strong>{course}</strong></p>
+                <p><strong>Amount Paid:</strong> {currency} {amount}</p>
+                <p>You can start learning right away by visiting your dashboard.</p>
+                <p>Happy Learning!</p>
+            """).format(
+                name=user.full_name or user.first_name or "Student",
+                course=course_title,
+                currency=payment_doc.currency,
+                amount=payment_doc.amount
+            )
+        )
+    except Exception as e:
+        frappe.log_error(f"Failed to send enrollment confirmation: {str(e)}")
+
+
 def get_payment_url(**kwargs):
     """
     Called by the payments app to get the payment URL.

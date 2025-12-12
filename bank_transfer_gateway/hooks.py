@@ -13,12 +13,11 @@ after_install = "bank_transfer_gateway.bank_transfer_gateway.setup.after_install
 # Document Events
 # ----------------
 # Hook on document methods and events
-
-# doc_events = {
-#     "*": {
-#         "on_update": "method",
-#     }
-# }
+doc_events = {
+    "LMS Payment": {
+        "on_update": "bank_transfer_gateway.bank_transfer_gateway.payment_controller.on_lms_payment_update"
+    }
+}
 
 # Website
 # -------
