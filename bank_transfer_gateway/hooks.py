@@ -43,3 +43,6 @@ website_route_rules = [
 web_include_js = "/assets/bank_transfer_gateway/js/bank_transfer.js"
 # web_include_css = "/assets/bank_transfer_gateway/css/bank_transfer.css"
 
+# Update website context to inject our script in LMS pages
+update_website_context = "bank_transfer_gateway.bank_transfer_gateway.website_context.update_context"
+
