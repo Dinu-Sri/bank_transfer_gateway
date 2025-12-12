@@ -8,12 +8,21 @@
 
 (function() {
     'use strict';
+    
+    console.log('Bank Transfer Gateway: Script loaded');
 
     // Wait for page to load
     document.addEventListener('DOMContentLoaded', function() {
+        console.log('Bank Transfer Gateway: DOMContentLoaded fired');
         // Delay to ensure LMS components are loaded
         setTimeout(initBankTransfer, 1500);
     });
+    
+    // If DOM is already loaded, run immediately
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        console.log('Bank Transfer Gateway: DOM already ready, running now');
+        setTimeout(initBankTransfer, 1000);
+    }
 
     // Also run when URL changes (SPA navigation)
     let lastUrl = location.href;
@@ -28,8 +37,10 @@
     async function initBankTransfer() {
         // Check if we're on a course or batch page
         const path = window.location.pathname;
+        console.log('Bank Transfer Gateway: initBankTransfer called, path:', path);
         
         if (path.includes('/courses/') || path.includes('/lms/courses/')) {
+            console.log('Bank Transfer Gateway: Detected course page');
             await setupCoursePaymentStatus();
         } else if (path.includes('/batches/') || path.includes('/lms/batches/')) {
             await setupBatchPaymentStatus();
