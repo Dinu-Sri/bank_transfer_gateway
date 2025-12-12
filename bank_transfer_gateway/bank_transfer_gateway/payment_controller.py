@@ -36,6 +36,7 @@ def sync_bank_transfer_order_status(payment_doc, confirmed=True):
     """
     Update Bank Transfer Order status when LMS Payment status changes.
     This keeps both records in sync.
+    Note: This is a non-critical operation - failures are silently ignored.
     """
     try:
         # Find Bank Transfer Order by reference
@@ -48,7 +49,6 @@ def sync_bank_transfer_order_status(payment_doc, confirmed=True):
                 "status": ["in", ["Pending", "Receipt Uploaded"]]
             })
             new_status = "Confirmed"
-            admin_note = f"Confirmed via LMS Payment: {payment_doc.name}"
         else:
             # Looking for confirmed orders to revert
             order_name = frappe.db.get_value("Bank Transfer Order", {
@@ -58,18 +58,18 @@ def sync_bank_transfer_order_status(payment_doc, confirmed=True):
                 "status": "Confirmed"
             })
             new_status = "Receipt Uploaded"
-            admin_note = f"Revoked via LMS Payment: {payment_doc.name}"
         
         if order_name:
-            # Use db.set_value for simple update without validation issues
-            frappe.db.set_value("Bank Transfer Order", order_name, {
-                "status": new_status,
-                "admin_notes": admin_note
-            })
+            # Direct SQL update to avoid any validation issues
+            frappe.db.sql("""
+                UPDATE `tabBank Transfer Order` 
+                SET status = %s, confirmation_method = '', modified = NOW()
+                WHERE name = %s
+            """, (new_status, order_name))
             frappe.db.commit()
-    except Exception as e:
-        # Log error without causing cascade failure
-        print(f"Warning: Failed to sync Bank Transfer Order status: {str(e)}")
+    except Exception:
+        # Silently ignore - this is a non-critical sync operation
+        pass
 
 
 def remove_enrollment_from_payment(payment_doc):

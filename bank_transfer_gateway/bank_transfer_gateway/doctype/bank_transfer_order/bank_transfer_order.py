@@ -377,13 +377,22 @@ def create_bank_transfer_order(doctype, docname, title=None, amount=None, curren
     else:
         frappe.throw(_("Invalid document type"))
     
-    # Check for existing pending order
+    # Check for existing pending order (new fields)
     existing_order = frappe.db.exists("Bank Transfer Order", {
         "source_doctype": doctype,
         "source_docname": docname,
         "user": user,
         "status": ["in", ["Pending", "Receipt Uploaded"]]
     })
+    
+    # Fallback: check with old fields
+    if not existing_order:
+        existing_order = frappe.db.exists("Bank Transfer Order", {
+            "reference_doctype": doctype,
+            "reference_docname": docname,
+            "payer_email": user_info.email,
+            "status": ["in", ["Pending", "Receipt Uploaded"]]
+        })
     
     if existing_order:
         order = frappe.get_doc("Bank Transfer Order", existing_order)
@@ -447,13 +456,24 @@ def check_existing_order(doctype, docname):
     Check if user has an existing pending bank transfer order.
     """
     user = frappe.session.user
+    user_email = frappe.db.get_value("User", user, "email")
     
+    # First try with new fields (source_doctype, source_docname, user)
     existing_order = frappe.db.get_value("Bank Transfer Order", {
         "source_doctype": doctype,
         "source_docname": docname,
         "user": user,
         "status": ["in", ["Pending", "Receipt Uploaded"]]
     }, ["order_id", "status", "created_at"], as_dict=True)
+    
+    # Fallback: check with old fields (reference_doctype, reference_docname, payer_email)
+    if not existing_order:
+        existing_order = frappe.db.get_value("Bank Transfer Order", {
+            "reference_doctype": doctype,
+            "reference_docname": docname,
+            "payer_email": user_email,
+            "status": ["in", ["Pending", "Receipt Uploaded"]]
+        }, ["order_id", "status", "created_at"], as_dict=True)
     
     if existing_order:
         return {
