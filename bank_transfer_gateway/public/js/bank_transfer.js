@@ -77,6 +77,8 @@
     // Helper function to make API calls without requiring frappe object
     async function callAPI(method, args) {
         try {
+            console.log('Bank Transfer Gateway: Calling API', method, args);
+            
             const response = await fetch('/api/method/' + method, {
                 method: 'POST',
                 headers: {
@@ -86,11 +88,16 @@
                 body: JSON.stringify(args)
             });
             
+            console.log('Bank Transfer Gateway: API response status', response.status);
+            
             if (!response.ok) {
-                throw new Error('API call failed');
+                const errorText = await response.text();
+                console.log('Bank Transfer Gateway: API error response', errorText);
+                throw new Error('API call failed: ' + response.status);
             }
             
             const data = await response.json();
+            console.log('Bank Transfer Gateway: API success', data);
             return data;
         } catch (e) {
             console.log('Bank Transfer Gateway API Error:', e);
@@ -123,10 +130,13 @@
     async function checkAndUpdatePaymentButton(doctype, docname) {
         try {
             // Check for existing pending order using fetch API
+            // Use the correct 2-level module path
             const result = await callAPI(
                 'bank_transfer_gateway.bank_transfer_gateway.doctype.bank_transfer_order.bank_transfer_order.check_existing_order',
                 { doctype: doctype, docname: docname }
             );
+
+            console.log('Bank Transfer Gateway: API result', result);
 
             if (result && result.message && result.message.exists) {
                 // User has a pending payment - update the button
@@ -270,11 +280,16 @@
     }
 
     function addBankTransferButton(doctype, docname) {
-        // Try to find existing payment buttons or enrollment area
-        const possibleContainers = [
-            '.course-card-cta',
-            '.course-cta',
-            '.batch-cta',
+        // Try to find the "Buy this course" button/link first
+        // LMS uses various button structures
+        const buyButtonSelectors = [
+            'a[href*="/lms/billing/"]',           // LMS billing link
+            'a[href*="/billing/course/"]',        // Direct billing link
+            'button:contains("Buy")',
+            'a:contains("Buy this course")',
+            '.course-card-cta a',
+            '.course-cta a',
+            '.batch-cta a',
             '.enrollment-button',
             '.buy-course-btn',
             '.payment-buttons',
@@ -282,26 +297,61 @@
             '.btn-primary-dark'
         ];
         
+        let buyButton = null;
         let container = null;
-        for (const selector of possibleContainers) {
-            const element = document.querySelector(selector);
-            if (element) {
-                container = element.parentElement || element;
-                break;
+        
+        // First try to find the buy button directly
+        for (const selector of buyButtonSelectors) {
+            try {
+                const elements = document.querySelectorAll(selector);
+                for (const el of elements) {
+                    const text = (el.textContent || el.innerText || '').toLowerCase();
+                    if (text.includes('buy') || el.href?.includes('/billing/')) {
+                        buyButton = el;
+                        container = el.parentElement;
+                        console.log('Bank Transfer Gateway: Found buy button', el);
+                        break;
+                    }
+                }
+                if (buyButton) break;
+            } catch (e) {}
+        }
+        
+        // If no buy button found, look for container areas
+        if (!container) {
+            const possibleContainers = [
+                '.course-card-cta',
+                '.course-cta',
+                '.batch-cta',
+                '.course-details-sidebar',
+                '.course-sidebar',
+                'aside',
+                '.container'
+            ];
+            
+            for (const selector of possibleContainers) {
+                const element = document.querySelector(selector);
+                if (element) {
+                    container = element;
+                    break;
+                }
             }
         }
         
-        // If no specific container found, try to find any prominent button area
         if (!container) {
-            // Look for the sidebar or main course info section
-            const sidebar = document.querySelector('.course-details-sidebar, .course-sidebar, aside');
-            if (sidebar) {
-                container = sidebar;
+            console.log('Bank Transfer Gateway: Could not find button container, trying body');
+            // Last resort - find any element with price info
+            const priceElements = document.querySelectorAll('*');
+            for (const el of priceElements) {
+                if (el.textContent && el.textContent.includes('Rs') && el.textContent.includes('12,500')) {
+                    container = el.parentElement;
+                    break;
+                }
             }
         }
         
         if (!container) {
-            console.log('Bank Transfer: Could not find button container');
+            console.log('Bank Transfer Gateway: Could not find any suitable container');
             return;
         }
         
