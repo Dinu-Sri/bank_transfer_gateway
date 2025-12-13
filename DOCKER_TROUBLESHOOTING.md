@@ -514,6 +514,211 @@ echo "frontend" > /home/frappe/frappe-bench/sites/currentsite.txt
 
 ---
 
+## Issue 8: File Upload 403 Forbidden Error
+
+### Symptoms
+- Student tries to upload payment receipt
+- Browser console shows: `Failed to load resource: the server responded with a status of 403`
+- Error on `/api/method/upload_file`
+
+### Root Cause
+When uploading a file with `doctype` and `docname` parameters, Frappe checks if the user has **write permission** on that document. Regular website users don't have write permission on `Bank Transfer Order` doctype.
+
+### Solution
+Remove `doctype` and `docname` from the upload request. Upload the file as a standalone attachment:
+
+**In `bank_transfer_instructions.html`:**
+```javascript
+// WRONG - triggers permission check
+const formData = new FormData();
+formData.append('file', file);
+formData.append('doctype', 'Bank Transfer Order');  // Remove this
+formData.append('docname', '{{ order.order_id }}'); // Remove this
+formData.append('is_private', '0');
+
+// CORRECT - uploads without permission check
+const formData = new FormData();
+formData.append('file', file);
+formData.append('is_private', '0');
+formData.append('folder', 'Home/Attachments');
+```
+
+The backend `update_receipt_status` function (which uses `ignore_permissions=True`) then links the file to the order.
+
+---
+
+## Issue 9: Redirect URL Leading to Error Page
+
+### Symptoms
+- Student clicks "Complete Payment" button
+- Redirects to `/lms/billing/lms-course/coursename`
+- Page shows "Module is incorrect" or "Uncaught Server Exception"
+
+### Root Cause
+When an **LMS Payment** exists but no **Bank Transfer Order** was created, the old code returned the LMS billing URL as redirect. LMS billing page errors out because the payment gateway isn't properly integrated.
+
+### Solution
+Update `check_existing_order()` to **auto-create a Bank Transfer Order** when LMS Payment exists without one:
+
+**In `bank_transfer_order.py`:**
+```python
+if lms_payment:
+    # Check if there's a corresponding Bank Transfer Order
+    bto = frappe.db.get_value("Bank Transfer Order", {...}, as_dict=True)
+    
+    if bto:
+        return {
+            "exists": True,
+            "redirect_url": f"/bank-transfer-instructions/{bto.order_id}",
+            ...
+        }
+    else:
+        # LMS Payment exists but no Bank Transfer Order
+        # Create one now instead of redirecting to LMS billing
+        try:
+            new_order = create_bank_transfer_order_from_lms_payment(lms_payment, doctype, docname, user)
+            return {
+                "exists": True,
+                "redirect_url": f"/bank-transfer-instructions/{new_order.order_id}",
+                ...
+            }
+        except Exception as e:
+            frappe.log_error(f"Failed to create Bank Transfer Order: {str(e)}")
+            return {"exists": True, "redirect_url": None, "error": "..."}
+```
+
+---
+
+## Issue 10: Pip Installing to Wrong Location
+
+### Symptoms
+- Run `pip install -e apps/bank_transfer_gateway`
+- App installs but still shows `ModuleNotFoundError`
+- `pip list` shows the app but Frappe can't find it
+
+### Root Cause
+Container has multiple Python environments. Running `pip` uses the **user's pip**, not the **Frappe virtualenv pip**.
+
+### Diagnosis
+```bash
+# Check which pip is being used
+which pip
+# Output: /usr/local/bin/pip (WRONG!)
+
+# Check where virtualenv pip is
+ls /home/frappe/frappe-bench/env/bin/pip
+# Output: /home/frappe/frappe-bench/env/bin/pip (CORRECT!)
+```
+
+### Solution
+Always use the full path to virtualenv pip:
+```bash
+# WRONG
+pip install -e apps/bank_transfer_gateway
+
+# CORRECT
+./env/bin/pip install -e apps/bank_transfer_gateway
+```
+
+Or:
+```bash
+/home/frappe/frappe-bench/env/bin/pip install -e apps/bank_transfer_gateway
+```
+
+---
+
+## Issue 11: CSRF Token Not Found for API Calls
+
+### Symptoms
+- API calls return 403 or 417
+- Browser console shows CSRF token errors
+- File uploads fail
+
+### Root Cause
+Different Frappe pages expose CSRF token in different ways:
+- Desk pages: `frappe.csrf_token`
+- Website pages: `window.csrf_token` or cookie
+
+### Solution
+Use a helper function that tries all sources:
+
+```javascript
+function getCSRFToken() {
+    // Try frappe.csrf_token first (Desk pages)
+    if (typeof frappe !== 'undefined' && frappe.csrf_token) {
+        return frappe.csrf_token;
+    }
+    // Try window.csrf_token (Website pages)
+    if (typeof window !== 'undefined' && window.csrf_token) {
+        return window.csrf_token;
+    }
+    // Try to get from cookie
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrf_token') {
+            return value;
+        }
+    }
+    // Try meta tag
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) {
+        return meta.getAttribute('content');
+    }
+    return '';
+}
+```
+
+---
+
+## Issue 12: Vue.js Re-renders and Removes DOM Changes
+
+### Symptoms
+- Modify "Buy this course" button successfully
+- Button reverts back to original after a moment
+- Console shows changes being made but they don't persist
+
+### Root Cause
+LMS uses **Vue.js SPA**. Vue re-renders components based on its virtual DOM state, overwriting any direct DOM manipulations.
+
+### Solution
+Instead of modifying Vue-controlled elements, **append new elements to `document.body`**. Vue doesn't touch elements outside its app container.
+
+```javascript
+function addPendingPaymentNotice(orderInfo, referenceElement) {
+    // Check if notice already exists
+    if (document.getElementById('pending-payment-notice')) return;
+    
+    const notice = document.createElement('div');
+    notice.id = 'pending-payment-notice';
+    notice.style.cssText = `
+        position: fixed !important;
+        bottom: 20px !important;
+        right: 20px !important;
+        z-index: 999999 !important;
+        width: 320px !important;
+        /* ... more styles ... */
+    `;
+    
+    notice.innerHTML = `
+        <div>Payment Pending</div>
+        <a href="${orderInfo.redirect_url}">Complete Payment</a>
+        <button onclick="this.parentElement.remove()">✕</button>
+    `;
+    
+    // Append to body - Vue won't touch this!
+    document.body.appendChild(notice);
+}
+```
+
+**Key Points:**
+- Use `position: fixed` so it stays in place
+- Use high `z-index` (999999) to appear above everything
+- Include a close button for UX
+- Append to `document.body`, not to any Vue component
+
+---
+
 ## Quick Recovery Checklist
 
 When site is completely down, check in this order:
@@ -525,3 +730,36 @@ When site is completely down, check in this order:
 5. **currentsite.txt** - Exists with correct site name?
 6. **Redis** - Flushed?
 7. **Nginx** - Reloaded after backend restart?
+
+---
+
+## Deployment Quick Reference
+
+### Update Backend Code
+```bash
+docker exec -it <backend_container> bash
+cd /home/frappe/frappe-bench/apps/bank_transfer_gateway
+git pull origin master
+cd ../..
+./env/bin/pip install -e apps/bank_transfer_gateway --force-reinstall --no-deps
+bench --site frontend migrate
+bench --site frontend clear-cache
+supervisorctl restart all
+exit
+```
+
+### Update Frontend JavaScript
+```bash
+docker exec -it <frontend_container> sh
+cd /home/frappe/frappe-bench/sites/assets/bank_transfer_gateway/js
+curl -o bank_transfer.js "https://raw.githubusercontent.com/Dinu-Sri/bank_transfer_gateway/master/bank_transfer_gateway/public/js/bank_transfer.js"
+exit
+```
+
+### Purge Cloudflare Cache
+1. Cloudflare Dashboard → Your Domain
+2. Caching → Configuration → Purge Everything
+
+---
+
+*Last updated: December 13, 2025*
