@@ -172,9 +172,27 @@
                             <label for="payment_receipt" class="form-label">
                                 <i class="fa fa-image"></i> Payment Receipt/Slip
                             </label>
+                            
+                            <!-- Custom styled file upload area -->
+                            <div class="file-upload-wrapper" style="position: relative; border: 2px dashed #ccc; border-radius: 8px; padding: 20px; text-align: center; background: #f8f9fa; cursor: pointer; transition: all 0.3s ease;" 
+                                 onclick="document.getElementById('payment_receipt').click()"
+                                 onmouseover="this.style.borderColor='#007bff'; this.style.background='#e7f3ff'"
+                                 onmouseout="this.style.borderColor='#ccc'; this.style.background='#f8f9fa'">
+                                <div id="upload-placeholder">
+                                    <i class="fa fa-cloud-upload" style="font-size: 40px; color: #007bff; margin-bottom: 10px;"></i>
+                                    <p style="margin: 0; font-size: 16px; font-weight: 500; color: #333;">Click to select file or drag & drop</p>
+                                    <p style="margin: 5px 0 0; font-size: 13px; color: #666;">Accepted: JPG, PNG, PDF (Max 5MB)</p>
+                                </div>
+                                <div id="file-selected" style="display: none;">
+                                    <i class="fa fa-file-image-o" style="font-size: 40px; color: #28a745; margin-bottom: 10px;"></i>
+                                    <p id="selected-filename" style="margin: 0; font-size: 16px; font-weight: 500; color: #28a745;"></p>
+                                    <p style="margin: 5px 0 0; font-size: 13px; color: #666;">Click to change file</p>
+                                </div>
+                            </div>
                             <input type="file" class="form-control" id="payment_receipt" name="payment_receipt"
-                                   accept="image/*,.pdf" {% if order.payment_receipt %}disabled{% endif %}>
-                            <small class="text-muted">Accepted formats: JPG, PNG, PDF (Max 5MB)</small>
+                                   accept="image/*,.pdf" {% if order.payment_receipt %}disabled{% endif %}
+                                   style="position: absolute; left: -9999px;"
+                                   onchange="handleFileSelect(this)">
                         </div>
 
                         <div class="mb-3">
@@ -186,7 +204,7 @@
                         </div>
 
                         {% if not order.payment_receipt %}
-                        <button type="submit" class="btn btn-primary" id="upload-btn">
+                        <button type="submit" class="btn btn-primary btn-lg" id="upload-btn" style="padding: 12px 30px; font-size: 16px;">
                             <i class="fa fa-upload"></i> Upload Receipt
                         </button>
                         {% endif %}
@@ -256,6 +274,23 @@ function getCSRFToken() {
         return meta.getAttribute('content');
     }
     return '';
+}
+
+// Handle file selection display
+function handleFileSelect(input) {
+    const placeholder = document.getElementById('upload-placeholder');
+    const fileSelected = document.getElementById('file-selected');
+    const filenameDisplay = document.getElementById('selected-filename');
+    
+    if (input.files && input.files.length > 0) {
+        const file = input.files[0];
+        placeholder.style.display = 'none';
+        fileSelected.style.display = 'block';
+        filenameDisplay.textContent = file.name + ' (' + (file.size / 1024 / 1024).toFixed(2) + ' MB)';
+    } else {
+        placeholder.style.display = 'block';
+        fileSelected.style.display = 'none';
+    }
 }
 
 function copyToClipboard(text) {
