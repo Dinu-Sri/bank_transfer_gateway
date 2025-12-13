@@ -1,53 +1,96 @@
 # Bank Transfer Gateway - Project Status & Context
 
-**Last Updated:** December 12, 2025
+**Last Updated:** December 13, 2025
 
 ---
 
-## ✅ MAJOR MILESTONE ACHIEVED - JS Injection Working!
+## ✅ FULLY WORKING - Pending Payment Detection Complete!
 
-**Date:** December 12, 2025
+**Date:** December 13, 2025
 
-The JavaScript file is now successfully being injected into ALL pages including the LMS Vue SPA pages!
+The Bank Transfer Gateway is now fully operational! When a user has a pending bank transfer payment, a floating notification appears on the course page guiding them to complete their payment.
 
-### What Was Accomplished
-1. ✅ Identified that LMS uses Vue.js SPA which bypasses Frappe's standard `web_include_js` hook
-2. ✅ Researched Frappe's `after_request` hook from source code (`frappe/app.py`)
-3. ✅ Implemented response injection via `after_request` hook
-4. ✅ Fixed `apps.txt` to include our app in the hooks resolution
-5. ✅ Cleared Redis cache and verified hook registration
-6. ✅ Script now loads on LMS course pages
+### What's Working Now
+1. ✅ JS injection into LMS Vue SPA pages
+2. ✅ API calls to detect pending payments (returns 200 OK)
+3. ✅ Floating notification appears at bottom-right of screen
+4. ✅ Shows correct status: "Payment Pending" or "Waiting for Approval"
+5. ✅ "Complete Payment / Upload Receipt" button redirects to payment page
+6. ✅ "Buy this course" button also redirects to payment page (href updated)
+7. ✅ Close button (✕) to dismiss the notice
+8. ✅ Works around Vue.js re-rendering by appending to document.body
 
-### Current Console Output (Working!)
+### Console Output (Working!)
 ```
 Bank Transfer Gateway: Script loaded
 Bank Transfer Gateway: DOMContentLoaded fired
-Bank Transfer Gateway: initBankTransfer called, path: /lms/
 Bank Transfer Gateway: initBankTransfer called, path: /lms/courses/quickbooks-master-course
 Bank Transfer Gateway: Detected course page
+Bank Transfer Gateway: API response status 200
+Bank Transfer Gateway: Found pending payment {exists: true, status: 'Pending', redirect_url: '...'}
+Bank Transfer Gateway: Notice appended to body
 ```
 
-### Current Error to Fix
+---
+
+## 🎉 December 13, 2025 - Major Issues Resolved
+
+### Issue 1: Site Crashed with ModuleNotFoundError
+**Problem:** After removing docker-compose.yml changes, the site showed "Internal Server Error" with `ModuleNotFoundError: No module named 'bank_transfer_gateway'` and `'payments'`.
+
+**Root Cause:** Apps were registered in database tables but Python modules didn't exist in containers.
+
+**Solution:** Cleaned orphaned app references from multiple database tables:
+- `tabDefaultValue` (installed_apps) - SET to `["frappe", "lms"]`
+- `tabModule Def` - Deleted Bank Transfer Gateway, Payments, Payment Gateways
+- `tabDocType` - Deleted all related doctypes
+
+### Issue 2: 502 Bad Gateway After Container Restart
+**Problem:** After restarting stack, nginx returned 502.
+
+**Solution:** Run `nginx -s reload` in frontend container after backend restarts.
+
+### Issue 3: CSS 404 Errors (Broken Styling)
+**Problem:** Website unstyled due to CSS file hash mismatches.
+
+**Solution:** Copy CSS files with correct hashes:
+```bash
+cp website.bundle.XRE5YRZD.css website.bundle.2Y6FVZRW.css
+cp lms.bundle.LKFKGSLD.css lms.bundle.7HU65HCC.css
+cp login.bundle.SP4OKUVQ.css login.bundle.6J4DKKOV.css
 ```
-Failed to load resource: 400 error on /api/method/bank_tra..ck_existing_order:1
-Bank Transfer Gateway API Error: Error: API call failed
-Bank Transfer: Could not find button container
+
+### Issue 4: JS File Not Served (404)
+**Problem:** Frontend container didn't have the JS file.
+
+**Solution:** Download directly to frontend container's assets folder:
+```bash
+cd /home/frappe/frappe-bench/sites/assets/bank_transfer_gateway/js/
+curl -o bank_transfer.js https://raw.githubusercontent.com/Dinu-Sri/bank_transfer_gateway/master/bank_transfer_gateway/public/js/bank_transfer.js
 ```
+
+### Issue 5: Vue.js Re-rendering Removed Our DOM Changes
+**Problem:** When trying to modify the "Buy this course" button, Vue.js would re-render and undo changes.
+
+**Solution:** Instead of modifying the Vue button, append a new floating notification to `document.body` with `position: fixed`. Vue doesn't touch elements outside its app container.
 
 ---
 
 ## 🎯 Project Goal
 
 When a student initiates a bank transfer payment for a course but doesn't complete the payment submission:
-1. **Change the "Buy Now" button to "Complete Payment"** on the course page
-2. **Redirect them to the payment instructions page** where they can upload their bank slip
+1. ✅ **Show floating notification** with payment status
+2. ✅ **Redirect them to the payment instructions page** where they can upload their bank slip
+3. ✅ **"Buy this course" button also redirects** to payment page
 
 ### User Flow
 1. Student clicks "Buy Now" on course
 2. Student selects "Bank Transfer" payment method
 3. Student sees bank details and payment instructions
-4. **PROBLEM**: If student leaves without submitting slip, there's no way to return to that page
-5. **SOLUTION**: Detect pending payment, change button to "Complete Payment", redirect to instructions page
+4. **If student leaves without submitting slip:**
+   - Next time they visit the course page
+   - Floating notification appears: "Payment Pending - No need to buy again!"
+   - They can click "Complete Payment / Upload Receipt" to continue
 
 ---
 
@@ -71,7 +114,7 @@ When a student initiates a bank transfer payment for a course but doesn't comple
 ### Volume Sharing
 - Only `sites` volume is shared between containers
 - `apps` folder is baked into Docker image
-- When apps are updated, must reinstall in each container
+- JS files must be manually copied to frontend container's assets folder
 
 ### Site Details
 - **URL**: https://academy.sltaxsolution.lk
@@ -274,35 +317,41 @@ def inject_bank_transfer_script(response=None, request=None):
 ## ✅ What's Working
 
 1. **All Docker containers running** - backend, frontend, scheduler, queue-long, queue-short, websocket
-2. **Apps installed in all containers** - payments and bank_transfer_gateway
+2. **Apps installed** - frappe, lms, payments, bank_transfer_gateway
 3. **Email/SMTP working** - scheduler sends emails
 4. **CSS assets fixed** - all pages styling works
-5. **API endpoint works** - `check_existing_order` returns correct data when called directly
-6. **JS file exists** - at `/assets/bank_transfer_gateway/js/bank_transfer.js` in frontend container
-7. **✅ JS INJECTION WORKING** - Script now loads on ALL pages including LMS Vue SPA!
+5. **API endpoint works** - `check_existing_order` returns 200 with correct data
+6. **JS file deployed** - at `/assets/bank_transfer_gateway/js/bank_transfer.js` in frontend container
+7. **JS injection working** - Script loads on ALL pages including LMS Vue SPA
+8. **Pending payment detection** - API correctly detects pending payments
+9. **Floating notification** - Shows at bottom-right of screen with correct status
+10. **Redirect working** - Both notification button and "Buy" button redirect to payment page
 
 ---
 
-## ❌ Current Problem (NEXT TO FIX)
+## 🚀 Deployment Checklist
 
-### API Call Returning 400 Error
+After any code changes, follow these steps:
 
-**The Issue:**
-- JavaScript is loading correctly ✅
-- Script detects course page correctly ✅
-- API call to `check_existing_order` returns 400 error
-- Button container not found (may be Vue component selector issue)
-
-**Console Errors:**
-```
-Failed to load resource: 400 error
-Bank Transfer Gateway API Error: Error: API call failed
-Bank Transfer: Could not find button container
+### 1. Push to GitHub
+```bash
+git add -A
+git commit -m "Your message"
+git push
 ```
 
-**Next Steps:**
-1. Fix the API endpoint path in bank_transfer.js
-2. Update button selector for Vue-rendered components
+### 2. Update JS in Frontend Container
+```bash
+cd /home/frappe/frappe-bench/sites/assets/bank_transfer_gateway/js/
+curl -o bank_transfer.js "https://raw.githubusercontent.com/Dinu-Sri/bank_transfer_gateway/master/bank_transfer_gateway/public/js/bank_transfer.js?v=$(date +%s)"
+```
+
+### 3. Purge Cloudflare Cache
+1. Cloudflare Dashboard → your domain
+2. Caching → Configuration → Purge Everything
+
+### 4. Test in Incognito
+Open course page in Incognito window to bypass browser cache.
 
 ---
 
