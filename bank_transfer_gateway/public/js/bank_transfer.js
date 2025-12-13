@@ -224,140 +224,130 @@
         console.log('Bank Transfer Gateway: Final button found', buyButton);
         console.log('Bank Transfer Gateway: Parent anchor found', parentAnchor);
 
-        if (buyButton) {
-            console.log('Bank Transfer Gateway: Modifying button for status', orderInfo.status);
-            
-            // Function to apply modifications
-            const applyModifications = () => {
-                // Find the span that contains the text
-                const textSpan = buyButton.querySelector('span.truncate span') || 
-                                buyButton.querySelector('span span') ||
-                                buyButton.querySelector('span') ||
-                                buyButton;
-                
-                // Only modify if not already modified
-                if (textSpan.textContent.includes('Complete Payment') || 
-                    textSpan.textContent.includes('Under Review')) {
-                    return false; // Already modified
-                }
-                
-                // Change button text and style based on status
-                if (orderInfo.status === 'Pending') {
-                    textSpan.textContent = '💳 Complete Payment';
-                    buyButton.style.cssText += 'background-color: #f97316 !important;';
-                } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
-                    textSpan.textContent = '⏳ Payment Under Review';
-                    buyButton.style.cssText += 'background-color: #3b82f6 !important;';
-                }
-                
-                console.log('Bank Transfer Gateway: Applied text change to', textSpan.textContent);
-                return true;
+        // Instead of modifying the Vue button (which gets re-rendered), 
+        // add a NEW prominent element below it
+        addPendingPaymentNotice(orderInfo, parentAnchor || buyButton);
+        
+        // Update the anchor href so if they click "Buy" it goes to payment page anyway
+        if (parentAnchor) {
+            parentAnchor.href = orderInfo.redirect_url;
+            parentAnchor.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Bank Transfer Gateway: Redirecting to', orderInfo.redirect_url);
+                window.location.href = orderInfo.redirect_url;
             };
-            
-            // Apply immediately
-            applyModifications();
-            
-            // Update click handler on parent anchor (more reliable than button)
-            if (parentAnchor) {
-                parentAnchor.href = orderInfo.redirect_url;
-                parentAnchor.onclick = function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Bank Transfer Gateway: Redirecting to', orderInfo.redirect_url);
-                    window.location.href = orderInfo.redirect_url;
-                };
-            }
-            
-            // Watch for Vue re-renders and reapply modifications
-            const observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
-                        // Check if our modification was undone
-                        const currentText = buyButton.textContent || '';
-                        if (currentText.toLowerCase().includes('buy')) {
-                            console.log('Bank Transfer Gateway: Vue re-rendered, reapplying...');
-                            applyModifications();
-                        }
-                    }
-                }
-            });
-            
-            // Observe the button for changes
-            observer.observe(buyButton, { 
-                childList: true, 
-                subtree: true, 
-                characterData: true 
-            });
-            
-            // Also retry a few times with delays (Vue might render after our initial modification)
-            setTimeout(applyModifications, 500);
-            setTimeout(applyModifications, 1000);
-            setTimeout(applyModifications, 2000);
-            
-            console.log('Bank Transfer Gateway: Button modified successfully');
-        } else {
-            console.log('Bank Transfer Gateway: Could not find button to modify');
         }
 
-        // Also add a notice banner
-        addPendingPaymentBanner(orderInfo);
+        console.log('Bank Transfer Gateway: Pending payment notice added');
+    }
+
+    function addPendingPaymentNotice(orderInfo, referenceElement) {
+        // Check if notice already exists
+        if (document.getElementById('pending-payment-notice')) return;
+        
+        const notice = document.createElement('div');
+        notice.id = 'pending-payment-notice';
+        
+        let bgColor, borderColor, icon, title, message, buttonText, buttonColor;
+        
+        if (orderInfo.status === 'Pending') {
+            bgColor = '#fff3cd';
+            borderColor = '#f97316';
+            icon = '💳';
+            title = 'Payment Pending';
+            message = 'You already started a bank transfer payment. No need to buy again!';
+            buttonText = 'Complete Payment / Upload Receipt';
+            buttonColor = '#f97316';
+        } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
+            bgColor = '#d1ecf1';
+            borderColor = '#17a2b8';
+            icon = '⏳';
+            title = 'Waiting for Approval';
+            message = 'Your payment receipt has been submitted and is being reviewed by admin.';
+            buttonText = 'View Payment Status';
+            buttonColor = '#17a2b8';
+        } else {
+            bgColor = '#d4edda';
+            borderColor = '#28a745';
+            icon = '✅';
+            title = 'Payment Submitted';
+            message = 'Your payment is being processed.';
+            buttonText = 'View Details';
+            buttonColor = '#28a745';
+        }
+        
+        notice.style.cssText = `
+            margin-top: 12px;
+            padding: 16px;
+            background: ${bgColor};
+            border-left: 4px solid ${borderColor};
+            border-radius: 8px;
+            font-family: inherit;
+        `;
+        
+        notice.innerHTML = `
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+                <span style="font-size: 24px;">${icon}</span>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 14px; color: #333; margin-bottom: 4px;">
+                        ${title}
+                    </div>
+                    <div style="font-size: 13px; color: #555; margin-bottom: 12px;">
+                        ${message}
+                    </div>
+                    <a href="${orderInfo.redirect_url}" 
+                       style="display: inline-block; 
+                              background: ${buttonColor}; 
+                              color: white; 
+                              padding: 8px 16px; 
+                              border-radius: 6px; 
+                              text-decoration: none; 
+                              font-size: 13px; 
+                              font-weight: 500;
+                              transition: opacity 0.2s;">
+                        ${buttonText}
+                    </a>
+                </div>
+            </div>
+        `;
+        
+        // Insert after the reference element (buy button or its container)
+        if (referenceElement && referenceElement.parentElement) {
+            // Find the best container - go up to find the price/button container
+            let container = referenceElement.parentElement;
+            
+            // Try to insert after the anchor/button
+            if (referenceElement.nextSibling) {
+                container.insertBefore(notice, referenceElement.nextSibling);
+            } else {
+                container.appendChild(notice);
+            }
+            
+            console.log('Bank Transfer Gateway: Notice inserted successfully');
+        } else {
+            // Fallback - find sidebar or main container
+            const fallbackContainers = [
+                '.course-details-sidebar',
+                'aside',
+                '.container',
+                'main'
+            ];
+            
+            for (const selector of fallbackContainers) {
+                const container = document.querySelector(selector);
+                if (container) {
+                    container.insertBefore(notice, container.firstChild);
+                    console.log('Bank Transfer Gateway: Notice inserted in fallback container');
+                    break;
+                }
+            }
+        }
     }
 
     function addPendingPaymentBanner(orderInfo) {
-        // Check if banner already exists
-        if (document.getElementById('pending-payment-banner')) return;
-
-        const banner = document.createElement('div');
-        banner.id = 'pending-payment-banner';
-        banner.className = 'alert alert-warning mt-3 mb-3';
-        banner.style.cssText = 'border-left: 4px solid #ffc107; background: #fff3cd; padding: 15px; border-radius: 5px;';
-        
-        let statusText = '';
-        let actionText = '';
-        let orderIdText = '';
-        
-        if (orderInfo.status === 'Pending') {
-            statusText = 'You have a pending payment for this course.';
-            actionText = 'Complete Payment';
-        } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
-            statusText = 'Your payment receipt has been uploaded and is under review.';
-            actionText = 'View Payment Status';
-        }
-        
-        if (orderInfo.order_id) {
-            orderIdText = `<br><small>Order ID: ${orderInfo.order_id}</small>`;
-        }
-
-        banner.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                <div>
-                    <strong><i class="fa fa-info-circle"></i> ${statusText}</strong>
-                    ${orderIdText}
-                </div>
-                <a href="${orderInfo.redirect_url}" class="btn btn-warning btn-sm">
-                    <i class="fa fa-arrow-right"></i> ${actionText}
-                </a>
-            </div>
-        `;
-
-        // Find a good place to insert the banner
-        const containers = [
-            '.course-details-container',
-            '.course-content',
-            '.course-head',
-            '.course-card-cta',
-            '.container',
-            'main',
-            '.course-body'
-        ];
-
-        for (const selector of containers) {
-            const container = document.querySelector(selector);
-            if (container) {
-                container.insertBefore(banner, container.firstChild);
-                break;
-            }
-        }
+        // Now handled by addPendingPaymentNotice - keeping for backward compatibility
+        return;
     }
 
     function addBankTransferButton(doctype, docname) {
