@@ -324,12 +324,11 @@ document.getElementById('receipt-upload-form')?.addEventListener('submit', async
     uploadBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Uploading...';
 
     try {
-        // First upload the file
+        // First upload the file (without doctype to avoid permission issues)
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('doctype', 'Bank Transfer Order');
-        formData.append('docname', '{{ order.order_id }}');
         formData.append('is_private', '0');
+        formData.append('folder', 'Home/Attachments');
 
         const uploadResponse = await fetch('/api/method/upload_file', {
             method: 'POST',
