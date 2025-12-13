@@ -227,38 +227,72 @@
         if (buyButton) {
             console.log('Bank Transfer Gateway: Modifying button for status', orderInfo.status);
             
-            // Find the span that contains the text
-            const textSpan = buyButton.querySelector('span.truncate span') || 
-                            buyButton.querySelector('span') ||
-                            buyButton;
-            
-            // Change button text and style based on status
-            if (orderInfo.status === 'Pending') {
-                textSpan.textContent = '💳 Complete Payment';
-                // Change background color for Tailwind - replace gray with orange/warning
-                buyButton.classList.remove('bg-surface-gray-7', 'hover:bg-surface-gray-6');
-                buyButton.classList.add('bg-orange-500', 'hover:bg-orange-600');
-                buyButton.style.backgroundColor = '#f97316'; // Orange
-            } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
-                textSpan.textContent = '⏳ Payment Under Review';
-                buyButton.classList.remove('bg-surface-gray-7', 'hover:bg-surface-gray-6');
-                buyButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                buyButton.style.backgroundColor = '#3b82f6'; // Blue
-            }
-            
-            // Update click handler on both button and parent anchor
-            const clickHandler = function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Bank Transfer Gateway: Redirecting to', orderInfo.redirect_url);
-                window.location.href = orderInfo.redirect_url;
+            // Function to apply modifications
+            const applyModifications = () => {
+                // Find the span that contains the text
+                const textSpan = buyButton.querySelector('span.truncate span') || 
+                                buyButton.querySelector('span span') ||
+                                buyButton.querySelector('span') ||
+                                buyButton;
+                
+                // Only modify if not already modified
+                if (textSpan.textContent.includes('Complete Payment') || 
+                    textSpan.textContent.includes('Under Review')) {
+                    return false; // Already modified
+                }
+                
+                // Change button text and style based on status
+                if (orderInfo.status === 'Pending') {
+                    textSpan.textContent = '💳 Complete Payment';
+                    buyButton.style.cssText += 'background-color: #f97316 !important;';
+                } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
+                    textSpan.textContent = '⏳ Payment Under Review';
+                    buyButton.style.cssText += 'background-color: #3b82f6 !important;';
+                }
+                
+                console.log('Bank Transfer Gateway: Applied text change to', textSpan.textContent);
+                return true;
             };
             
-            buyButton.onclick = clickHandler;
+            // Apply immediately
+            applyModifications();
+            
+            // Update click handler on parent anchor (more reliable than button)
             if (parentAnchor) {
-                parentAnchor.onclick = clickHandler;
                 parentAnchor.href = orderInfo.redirect_url;
+                parentAnchor.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Bank Transfer Gateway: Redirecting to', orderInfo.redirect_url);
+                    window.location.href = orderInfo.redirect_url;
+                };
             }
+            
+            // Watch for Vue re-renders and reapply modifications
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        // Check if our modification was undone
+                        const currentText = buyButton.textContent || '';
+                        if (currentText.toLowerCase().includes('buy')) {
+                            console.log('Bank Transfer Gateway: Vue re-rendered, reapplying...');
+                            applyModifications();
+                        }
+                    }
+                }
+            });
+            
+            // Observe the button for changes
+            observer.observe(buyButton, { 
+                childList: true, 
+                subtree: true, 
+                characterData: true 
+            });
+            
+            // Also retry a few times with delays (Vue might render after our initial modification)
+            setTimeout(applyModifications, 500);
+            setTimeout(applyModifications, 1000);
+            setTimeout(applyModifications, 2000);
             
             console.log('Bank Transfer Gateway: Button modified successfully');
         } else {
