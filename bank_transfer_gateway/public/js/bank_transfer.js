@@ -229,7 +229,7 @@
         addPendingPaymentNotice(orderInfo, parentAnchor || buyButton);
         
         // Update the anchor href so if they click "Buy" it goes to payment page anyway
-        if (parentAnchor) {
+        if (parentAnchor && orderInfo.redirect_url) {
             parentAnchor.href = orderInfo.redirect_url;
             parentAnchor.onclick = function(e) {
                 e.preventDefault();
@@ -245,6 +245,13 @@
     function addPendingPaymentNotice(orderInfo, referenceElement) {
         // Check if notice already exists
         if (document.getElementById('pending-payment-notice')) return;
+        
+        // Get redirect URL - if not available, show a different message
+        const redirectUrl = orderInfo.redirect_url;
+        if (!redirectUrl) {
+            console.log('Bank Transfer Gateway: No redirect URL available');
+            // Still show notice but without clickable button
+        }
         
         let bgColor, borderColor, icon, title, message, buttonText, buttonColor;
         
@@ -305,7 +312,8 @@
                     <div style="font-size: 13px !important; color: #555 !important; margin-bottom: 12px !important; line-height: 1.4 !important;">
                         ${message}
                     </div>
-                    <a href="${orderInfo.redirect_url}" 
+                    ${redirectUrl ? `
+                    <a href="${redirectUrl}" 
                        style="display: inline-block !important; 
                               background: ${buttonColor} !important; 
                               color: white !important; 
@@ -317,6 +325,11 @@
                               cursor: pointer !important;">
                         ${buttonText}
                     </a>
+                    ` : `
+                    <div style="font-size: 12px !important; color: #856404 !important; padding: 8px !important; background: #fff3cd !important; border-radius: 4px !important;">
+                        Please contact admin for payment details.
+                    </div>
+                    `}
                 </div>
                 <button onclick="this.parentElement.parentElement.remove()" 
                         style="background: none !important; border: none !important; cursor: pointer !important; font-size: 18px !important; color: #666 !important; padding: 0 !important; line-height: 1 !important;">

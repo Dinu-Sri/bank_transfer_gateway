@@ -450,6 +450,45 @@ def get_bank_transfer_settings():
     }
 
 
+def create_bank_transfer_order_from_lms_payment(lms_payment, doctype, docname, user):
+    """
+    Create a Bank Transfer Order from an existing LMS Payment.
+    This is called when an LMS Payment exists but no Bank Transfer Order was created.
+    """
+    import uuid
+    
+    # Generate unique order ID
+    order_id = f"BTO-{uuid.uuid4().hex[:8].upper()}"
+    
+    # Get course/document title
+    title = docname
+    if doctype == "LMS Course":
+        title = frappe.db.get_value("LMS Course", docname, "title") or docname
+    
+    # Get user details
+    user_doc = frappe.get_doc("User", user)
+    
+    # Create the Bank Transfer Order
+    order = frappe.get_doc({
+        "doctype": "Bank Transfer Order",
+        "order_id": order_id,
+        "user": user,
+        "user_name": user_doc.full_name,
+        "user_email": user_doc.email,
+        "source_doctype": doctype,
+        "source_docname": docname,
+        "source_title": title,
+        "amount": lms_payment.get("amount", 0),
+        "currency": frappe.db.get_single_value("Bank Transfer Settings", "currency") or "LKR",
+        "status": "Pending",
+        "lms_payment": lms_payment.get("name")
+    })
+    order.insert(ignore_permissions=True)
+    frappe.db.commit()
+    
+    return order
+
+
 @frappe.whitelist(allow_guest=False)
 def check_existing_order(doctype, docname):
     """
@@ -486,14 +525,27 @@ def check_existing_order(doctype, docname):
             }
         else:
             # LMS Payment exists but no Bank Transfer Order
-            # Return info to redirect to billing page to complete payment
-            return {
-                "exists": True,
-                "order_id": None,
-                "status": "Pending",
-                "redirect_url": f"/lms/billing/{doctype.lower().replace(' ', '-')}/{docname}",
-                "lms_payment": lms_payment.name
-            }
+            # Create a Bank Transfer Order now and redirect to instructions
+            try:
+                new_order = create_bank_transfer_order_from_lms_payment(lms_payment, doctype, docname, user)
+                return {
+                    "exists": True,
+                    "order_id": new_order.order_id,
+                    "status": new_order.status,
+                    "redirect_url": f"/bank-transfer-instructions/{new_order.order_id}",
+                    "lms_payment": lms_payment.name
+                }
+            except Exception as e:
+                frappe.log_error(f"Failed to create Bank Transfer Order: {str(e)}")
+                # Fallback: return details without redirect
+                return {
+                    "exists": True,
+                    "order_id": None,
+                    "status": "Pending",
+                    "redirect_url": None,
+                    "lms_payment": lms_payment.name,
+                    "error": "Could not create Bank Transfer Order"
+                }
     
     # Fallback: Check Bank Transfer Order directly
     existing_order = frappe.db.get_value("Bank Transfer Order", {
