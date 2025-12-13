@@ -246,9 +246,6 @@
         // Check if notice already exists
         if (document.getElementById('pending-payment-notice')) return;
         
-        const notice = document.createElement('div');
-        notice.id = 'pending-payment-notice';
-        
         let bgColor, borderColor, icon, title, message, buttonText, buttonColor;
         
         if (orderInfo.status === 'Pending') {
@@ -277,72 +274,61 @@
             buttonColor = '#28a745';
         }
         
+        // Create notice and append to BODY (not relative to any element)
+        // This ensures Vue won't remove it
+        const notice = document.createElement('div');
+        notice.id = 'pending-payment-notice';
         notice.style.cssText = `
-            margin-top: 12px;
-            padding: 16px;
-            background: ${bgColor};
-            border-left: 4px solid ${borderColor};
-            border-radius: 8px;
-            font-family: inherit;
+            position: fixed !important;
+            bottom: 20px !important;
+            right: 20px !important;
+            z-index: 999999 !important;
+            width: 320px !important;
+            padding: 16px !important;
+            background: ${bgColor} !important;
+            border-left: 4px solid ${borderColor} !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
         `;
         
         notice.innerHTML = `
-            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                <span style="font-size: 24px;">${icon}</span>
-                <div style="flex: 1;">
-                    <div style="font-weight: 600; font-size: 14px; color: #333; margin-bottom: 4px;">
+            <div style="display: flex !important; align-items: flex-start !important; gap: 12px !important;">
+                <span style="font-size: 28px !important; line-height: 1 !important;">${icon}</span>
+                <div style="flex: 1 !important;">
+                    <div style="font-weight: 600 !important; font-size: 15px !important; color: #333 !important; margin-bottom: 6px !important;">
                         ${title}
                     </div>
-                    <div style="font-size: 13px; color: #555; margin-bottom: 12px;">
+                    <div style="font-size: 13px !important; color: #555 !important; margin-bottom: 12px !important; line-height: 1.4 !important;">
                         ${message}
                     </div>
                     <a href="${orderInfo.redirect_url}" 
-                       style="display: inline-block; 
-                              background: ${buttonColor}; 
-                              color: white; 
-                              padding: 8px 16px; 
-                              border-radius: 6px; 
-                              text-decoration: none; 
-                              font-size: 13px; 
-                              font-weight: 500;
-                              transition: opacity 0.2s;">
+                       style="display: inline-block !important; 
+                              background: ${buttonColor} !important; 
+                              color: white !important; 
+                              padding: 10px 16px !important; 
+                              border-radius: 6px !important; 
+                              text-decoration: none !important; 
+                              font-size: 13px !important; 
+                              font-weight: 600 !important;
+                              cursor: pointer !important;">
                         ${buttonText}
                     </a>
                 </div>
+                <button onclick="this.parentElement.parentElement.remove()" 
+                        style="background: none !important; border: none !important; cursor: pointer !important; font-size: 18px !important; color: #666 !important; padding: 0 !important; line-height: 1 !important;">
+                    ✕
+                </button>
             </div>
         `;
         
-        // Insert after the reference element (buy button or its container)
-        if (referenceElement && referenceElement.parentElement) {
-            // Find the best container - go up to find the price/button container
-            let container = referenceElement.parentElement;
-            
-            // Try to insert after the anchor/button
-            if (referenceElement.nextSibling) {
-                container.insertBefore(notice, referenceElement.nextSibling);
-            } else {
-                container.appendChild(notice);
-            }
-            
-            console.log('Bank Transfer Gateway: Notice inserted successfully');
-        } else {
-            // Fallback - find sidebar or main container
-            const fallbackContainers = [
-                '.course-details-sidebar',
-                'aside',
-                '.container',
-                'main'
-            ];
-            
-            for (const selector of fallbackContainers) {
-                const container = document.querySelector(selector);
-                if (container) {
-                    container.insertBefore(notice, container.firstChild);
-                    console.log('Bank Transfer Gateway: Notice inserted in fallback container');
-                    break;
-                }
-            }
-        }
+        // Append directly to body
+        document.body.appendChild(notice);
+        
+        console.log('Bank Transfer Gateway: Notice appended to body');
     }
 
     function addPendingPaymentBanner(orderInfo) {
