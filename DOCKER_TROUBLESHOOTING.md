@@ -294,4 +294,199 @@ To avoid these issues recurring after container restarts:
 
 ---
 
-*Last updated: December 12, 2025*
+*Last updated: December 13, 2025*
+
+---
+
+## Issue 5: Site Completely Down After App Installation/Removal (CRITICAL)
+
+### Symptoms
+- Website shows 502 Bad Gateway
+- Backend container logs show: `ModuleNotFoundError: No module named 'bank_transfer_gateway'` or `'payments'`
+- Error occurs even after removing app from `apps.txt`
+
+### Root Cause
+When a Frappe app is installed but then the Python module is removed (e.g., container restart loses pip install), Frappe crashes because:
+1. The app is registered in multiple database tables
+2. Frappe tries to import the module on every request
+3. Even error pages try to import the module, causing infinite error loops
+
+### Key Places App References Hide
+
+| Location | How to Check | How to Fix |
+|----------|--------------|------------|
+| `sites/apps.txt` | `cat sites/apps.txt` | Remove app line |
+| `sites/apps.json` | `cat sites/apps.json` | Remove app entry with Python |
+| `tabDefaultValue` (installed_apps) | SQL query below | Update with SQL |
+| `tabModule Def` | SQL query below | Delete rows |
+| `tabDocType` | SQL query below | Delete rows |
+| `tabInstalled Application` | SQL query below | Verify clean |
+| Redis cache | `redis-cli FLUSHALL` | Flush all |
+
+### Complete Cleanup Process
+
+**Step 1: Check what's broken**
+```bash
+cd /home/frappe/frappe-bench/sites
+/home/frappe/frappe-bench/env/bin/python -c "
+import frappe
+frappe.init('frontend')
+frappe.connect()
+print('Installed apps:', frappe.get_installed_apps())
+"
+```
+
+If this shows apps like `bank_transfer_gateway` or `payments` that shouldn't be there, proceed:
+
+**Step 2: Clean apps.txt**
+```bash
+cat /home/frappe/frappe-bench/sites/apps.txt
+# Should only show: frappe, lms (or your valid apps)
+# If it shows unwanted apps, edit it:
+echo -e "frappe\nlms" > /home/frappe/frappe-bench/sites/apps.txt
+```
+
+**Step 3: Clean apps.json**
+```bash
+cd /home/frappe/frappe-bench/sites
+python3 -c "
+import json
+with open('apps.json', 'r') as f:
+    data = json.load(f)
+# Remove unwanted apps
+for app in ['bank_transfer_gateway', 'payments']:
+    if app in data:
+        del data[app]
+with open('apps.json', 'w') as f:
+    json.dump(data, f, indent=4)
+print('Done!')
+"
+```
+
+**Step 4: Clean tabDefaultValue (THE CRITICAL ONE!)**
+```bash
+# First check current value
+bench --site frontend mariadb -e "SELECT name, defvalue FROM \`tabDefaultValue\` WHERE defkey = 'installed_apps';"
+
+# Note the 'name' value (e.g., 'mbhj4t2lv2')
+# Update to only include valid apps
+bench --site frontend mariadb -e "UPDATE \`tabDefaultValue\` SET defvalue = '[\"frappe\", \"lms\"]' WHERE name = 'YOUR_NAME_HERE';"
+
+# Verify
+bench --site frontend mariadb -e "SELECT defvalue FROM \`tabDefaultValue\` WHERE defkey = 'installed_apps';"
+```
+
+**Step 5: Clean tabModule Def**
+```bash
+# Check for orphan modules
+bench --site frontend mariadb -e "SELECT name, app_name FROM \`tabModule Def\` WHERE app_name IN ('payments', 'bank_transfer_gateway');"
+
+# Delete them
+bench --site frontend mariadb -e "DELETE FROM \`tabModule Def\` WHERE name = 'Bank Transfer Gateway';"
+bench --site frontend mariadb -e "DELETE FROM \`tabModule Def\` WHERE name = 'Payments';"
+bench --site frontend mariadb -e "DELETE FROM \`tabModule Def\` WHERE name = 'Payment Gateways';"
+```
+
+**Step 6: Clean tabDocType**
+```bash
+# Check for orphan doctypes
+bench --site frontend mariadb -e "SELECT name, module FROM \`tabDocType\` WHERE module IN ('Bank Transfer Gateway', 'Payments', 'Payment Gateways');"
+
+# Delete each one
+bench --site frontend mariadb -e "DELETE FROM \`tabDocType\` WHERE name = 'Bank Transfer Order';"
+bench --site frontend mariadb -e "DELETE FROM \`tabDocType\` WHERE name = 'Bank Transfer Settings';"
+# ... delete all listed doctypes
+```
+
+**Step 7: Remove asset folders**
+```bash
+rm -rf /home/frappe/frappe-bench/sites/assets/bank_transfer_gateway
+rm -rf /home/frappe/frappe-bench/sites/assets/payments
+rm -rf /home/frappe/frappe-bench/sites/frontend/public_assets/bank_transfer_gateway
+rm -rf /home/frappe/frappe-bench/sites/frontend/public_assets/payments
+```
+
+**Step 8: Create currentsite.txt if missing**
+```bash
+# Check if exists
+cat /home/frappe/frappe-bench/sites/currentsite.txt
+
+# If "No such file", create it:
+echo "frontend" > /home/frappe/frappe-bench/sites/currentsite.txt
+```
+
+**Step 9: Clear all caches**
+```bash
+bench --site frontend clear-cache
+bench --site frontend clear-website-cache
+
+# Also flush Redis (from redis-cache container):
+redis-cli FLUSHALL
+```
+
+**Step 10: Restart stack and reload nginx**
+1. Stop the entire stack in Portainer
+2. Start the stack
+3. Go into frontend container and run: `nginx -s reload`
+
+### Verification
+```bash
+# Test backend directly
+curl -H "Host: frontend" http://localhost:8000 2>/dev/null | head -20
+
+# Test through nginx (in frontend container)
+curl -H "Host: frontend" http://localhost:8080 | head -20
+```
+
+---
+
+## Issue 6: 502 Bad Gateway After Stack Restart
+
+### Symptoms
+- Site was working before restart
+- Now shows 502 Bad Gateway
+- Backend logs show gunicorn starting OK (no errors)
+
+### Root Cause
+Nginx cached the old backend IP address. After container restart, backend has a new IP.
+
+### Solution
+In frontend container:
+```bash
+nginx -s reload
+```
+
+Then test:
+```bash
+curl -H "Host: frontend" http://localhost:8080 | head -20
+```
+
+---
+
+## Issue 7: "frontend does not exist" Error
+
+### Symptoms
+- Backend crashes with: `IncorrectSitePath: 404 Not Found: frontend does not exist`
+- But the folder `/home/frappe/frappe-bench/sites/frontend/` exists
+
+### Root Cause
+The `currentsite.txt` file is missing.
+
+### Solution
+```bash
+echo "frontend" > /home/frappe/frappe-bench/sites/currentsite.txt
+```
+
+---
+
+## Quick Recovery Checklist
+
+When site is completely down, check in this order:
+
+1. **apps.txt** - Only valid apps listed?
+2. **apps.json** - Only valid apps listed?
+3. **tabDefaultValue installed_apps** - Only valid apps in JSON array?
+4. **tabModule Def** - No orphan modules?
+5. **currentsite.txt** - Exists with correct site name?
+6. **Redis** - Flushed?
+7. **Nginx** - Reloaded after backend restart?
