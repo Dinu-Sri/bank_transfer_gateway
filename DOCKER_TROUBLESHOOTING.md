@@ -77,56 +77,91 @@ cd /home/frappe/frappe-bench/sites/assets/lms/dist/css/
 cp lms.bundle.EXISTING_HASH.css lms.bundle.NEEDED_HASH.css
 ```
 
-### Comprehensive Fix Example (December 2025)
+### Step-by-Step CSS Fix Process
 
-When multiple CSS files have hash mismatches, copy ALL of them:
+**Step 1: Find existing CSS files (in frontend container)**
+```bash
+ls /home/frappe/frappe-bench/sites/assets/frappe/dist/css/
+ls /home/frappe/frappe-bench/sites/assets/lms/dist/css/
+```
+
+Example output - these are your SOURCE files:
+```
+desk.bundle.WLNLGKVI.css
+email.bundle.XXMYT5LP.css
+login.bundle.SP4OKUVQ.css
+print.bundle.3EJLHQ27.css
+print_format.bundle.6YM6Q2T4.css
+report.bundle.K2JXPPS5.css
+web_form.bundle.PUMC6NCU.css
+website.bundle.XRE5YRZD.css
+
+lms.bundle.LKFKGSLD.css
+```
+
+**Step 2: Find what hashes are REQUESTED (404 errors)**
+
+Open browser DevTools (F12) → Network tab → refresh page → filter "css" → look for red 404 errors.
+
+The 404 URL shows the NEEDED hash, e.g.:
+```
+login.bundle.6J4DKKOV.css   ← NEEDED hash is 6J4DKKOV
+```
+
+**Step 3: Copy files to match requested hashes**
 
 ```bash
 cd /home/frappe/frappe-bench/sites/assets/frappe/dist/css/
 
-# Check what hashes are REQUESTED (in browser DevTools 404 errors)
-# Check what hashes EXIST (ls command)
-# Copy each existing file to the requested name
-
-cp desk.bundle.WLNLGKVI.css desk.bundle.NJXEJGIV.css
-cp desk.bundle.WLNLGKVI.css desk.bundle.PWLLNP3E.css
-cp email.bundle.XXMYT5LP.css email.bundle.2C5XBSJN.css
-cp login.bundle.SP4OKUVQ.css login.bundle.EXUUQIHG.css
+# Format: cp EXISTING.css NEEDED.css
 cp login.bundle.SP4OKUVQ.css login.bundle.6J4DKKOV.css
-cp print.bundle.3EJLHQ27.css print.bundle.JG3GOTZJ.css
-cp print_format.bundle.6YM6Q2T4.css print_format.bundle.54GOTS6X.css
-cp report.bundle.K2JXPPS5.css report.bundle.VGK7PVOE.css
-cp report.bundle.K2JXPPS5.css report.bundle.M6ES2620.css
-cp web_form.bundle.PUMC6NCU.css web_form.bundle.O3NDWJJI.css
 cp website.bundle.XRE5YRZD.css website.bundle.2Y6FVZRW.css
+cp desk.bundle.WLNLGKVI.css desk.bundle.PWLLNP3E.css
+cp report.bundle.K2JXPPS5.css report.bundle.M6ES2G20.css
 
 cd /home/frappe/frappe-bench/sites/assets/lms/dist/css/
 cp lms.bundle.LKFKGSLD.css lms.bundle.7HU65HCC.css
 ```
 
-**Important Notes:**
-- Different pages may request different hashes (login vs desk vs LMS)
-- Watch DevTools Network tab for each broken page to find exact hash needed
-- Hashes are case-sensitive - copy exactly as shown in 404 error
-
-### Post-Fix Steps
-1. Reload nginx in frontend container:
-   ```bash
-   nginx -s reload
-   ```
-
-2. Clear Cloudflare cache (if using Cloudflare)
-
-3. Hard refresh browser: `Ctrl+Shift+R`
-
-4. Test in Incognito window to avoid browser cache
-
-### Verification
+**Step 4: Reload nginx**
 ```bash
-# In frontend container, test if nginx can serve the file
-curl -I http://localhost:8080/assets/lms/dist/css/lms.bundle.HASH.css
+nginx -s reload
+```
+
+**Step 5: Verify file is served correctly**
+```bash
+curl -I http://localhost:8080/assets/frappe/dist/css/login.bundle.6J4DKKOV.css
 # Should return: HTTP/1.1 200 OK
 ```
+
+**Step 6: Clear Cloudflare cache (CRITICAL!)**
+
+If nginx returns 200 but browser still shows 404, Cloudflare cached the old 404 response:
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. Select your domain
+3. **Caching** → **Configuration** → **Purge Everything**
+
+**Step 7: Verify in browser**
+- Hard refresh: `Ctrl+Shift+R`
+- Or test in Incognito window
+- Or enable DevTools → Network → "Disable cache" checkbox
+
+### Actual Hashes Used (December 2025)
+
+| Bundle | Existing Hash | Needed Hash |
+|--------|---------------|-------------|
+| website.bundle | XRE5YRZD | 2Y6FVZRW |
+| lms.bundle | LKFKGSLD | 7HU65HCC |
+| login.bundle | SP4OKUVQ | 6J4DKKOV |
+| desk.bundle | WLNLGKVI | PWLLNP3E |
+| report.bundle | K2JXPPS5 | M6ES2G20 |
+
+**Important Notes:**
+- Different pages request different bundles (login page needs login.bundle, desk needs desk.bundle)
+- Hashes are case-sensitive - copy EXACTLY as shown in 404 error
+- Always purge Cloudflare cache after copying files
+- Check multiple pages (home, login, desk, courses) for different 404s
 
 ---
 

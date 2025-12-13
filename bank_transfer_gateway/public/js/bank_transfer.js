@@ -163,68 +163,106 @@
     }
 
     function updateButtonForPendingPayment(orderInfo) {
-        // Find existing buy/payment buttons
-        const possibleButtons = [
-            'button[data-action="buy"]',
-            '.btn-primary-dark',
-            '.buy-course-btn',
-            '.course-card-cta .btn',
-            '.btn:contains("Buy")',
-            'button:contains("Buy Now")',
-            'a:contains("Buy Now")'
-        ];
-
+        console.log('Bank Transfer Gateway: updateButtonForPendingPayment called', orderInfo);
+        
+        // Find the parent anchor link that wraps the button
+        let parentAnchor = null;
         let buyButton = null;
-        for (const selector of possibleButtons) {
-            try {
-                const elements = document.querySelectorAll(selector);
-                for (const el of elements) {
-                    if (el.textContent.toLowerCase().includes('buy') || 
-                        el.textContent.toLowerCase().includes('enroll') ||
-                        el.textContent.toLowerCase().includes('purchase')) {
-                        buyButton = el;
-                        break;
-                    }
-                }
-                if (buyButton) break;
-            } catch (e) {}
+        
+        // Method 1: Find anchor with href containing /lms/billing/
+        const billingLinks = document.querySelectorAll('a[href*="/lms/billing/"]');
+        console.log('Bank Transfer Gateway: Found billing links', billingLinks.length);
+        
+        if (billingLinks.length > 0) {
+            parentAnchor = billingLinks[0];
+            buyButton = parentAnchor.querySelector('button');
+            console.log('Bank Transfer Gateway: Found button via billing link', buyButton);
         }
-
-        // Also try with jQuery if available
-        if (!buyButton && typeof $ !== 'undefined') {
-            const $btn = $('button, a').filter(function() {
-                const text = $(this).text().toLowerCase();
-                return text.includes('buy') || text.includes('enroll now') || text.includes('purchase');
-            }).first();
-            if ($btn.length) {
-                buyButton = $btn[0];
+        
+        // Method 2: Find all buttons and check text
+        if (!buyButton) {
+            const allButtons = document.querySelectorAll('button');
+            console.log('Bank Transfer Gateway: Checking all buttons', allButtons.length);
+            
+            for (const btn of allButtons) {
+                const text = btn.textContent.toLowerCase();
+                if (text.includes('buy') || text.includes('enroll') || text.includes('purchase')) {
+                    buyButton = btn;
+                    parentAnchor = btn.closest('a');
+                    console.log('Bank Transfer Gateway: Found button by text', text);
+                    break;
+                }
             }
         }
+        
+        // Method 3: Look for buttons with Tailwind classes used by LMS
+        if (!buyButton) {
+            const tailwindButtons = document.querySelectorAll('button.w-full.inline-flex');
+            for (const btn of tailwindButtons) {
+                if (btn.textContent.toLowerCase().includes('buy')) {
+                    buyButton = btn;
+                    parentAnchor = btn.closest('a');
+                    console.log('Bank Transfer Gateway: Found button by Tailwind class');
+                    break;
+                }
+            }
+        }
+
+        // Legacy fallback for older LMS versions
+        if (!buyButton) {
+            const legacySelectors = [
+                'button[data-action="buy"]',
+                '.btn-primary-dark',
+                '.buy-course-btn'
+            ];
+            for (const selector of legacySelectors) {
+                buyButton = document.querySelector(selector);
+                if (buyButton) break;
+            }
+        }
+
+        console.log('Bank Transfer Gateway: Final button found', buyButton);
+        console.log('Bank Transfer Gateway: Parent anchor found', parentAnchor);
 
         if (buyButton) {
+            console.log('Bank Transfer Gateway: Modifying button for status', orderInfo.status);
+            
+            // Find the span that contains the text
+            const textSpan = buyButton.querySelector('span.truncate span') || 
+                            buyButton.querySelector('span') ||
+                            buyButton;
+            
             // Change button text and style based on status
             if (orderInfo.status === 'Pending') {
-                buyButton.innerHTML = '<i class="fa fa-credit-card"></i> Complete Payment';
-                buyButton.className = buyButton.className.replace('btn-primary', 'btn-warning');
-                buyButton.classList.add('btn-warning');
+                textSpan.textContent = '💳 Complete Payment';
+                // Change background color for Tailwind - replace gray with orange/warning
+                buyButton.classList.remove('bg-surface-gray-7', 'hover:bg-surface-gray-6');
+                buyButton.classList.add('bg-orange-500', 'hover:bg-orange-600');
+                buyButton.style.backgroundColor = '#f97316'; // Orange
             } else if (orderInfo.status === 'Receipt Uploaded' || orderInfo.status === 'Under Review') {
-                buyButton.innerHTML = '<i class="fa fa-clock"></i> Payment Under Review';
-                buyButton.className = buyButton.className.replace('btn-primary', 'btn-info');
-                buyButton.classList.add('btn-info');
-                buyButton.disabled = true;
+                textSpan.textContent = '⏳ Payment Under Review';
+                buyButton.classList.remove('bg-surface-gray-7', 'hover:bg-surface-gray-6');
+                buyButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                buyButton.style.backgroundColor = '#3b82f6'; // Blue
             }
             
-            // Update click handler
-            buyButton.onclick = function(e) {
+            // Update click handler on both button and parent anchor
+            const clickHandler = function(e) {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log('Bank Transfer Gateway: Redirecting to', orderInfo.redirect_url);
                 window.location.href = orderInfo.redirect_url;
             };
             
-            // Remove any existing href
-            if (buyButton.tagName === 'A') {
-                buyButton.href = orderInfo.redirect_url;
+            buyButton.onclick = clickHandler;
+            if (parentAnchor) {
+                parentAnchor.onclick = clickHandler;
+                parentAnchor.href = orderInfo.redirect_url;
             }
+            
+            console.log('Bank Transfer Gateway: Button modified successfully');
+        } else {
+            console.log('Bank Transfer Gateway: Could not find button to modify');
         }
 
         // Also add a notice banner
